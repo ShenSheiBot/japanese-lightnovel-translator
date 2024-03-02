@@ -1,0 +1,16 @@
+*.pickle
+**/*.bck
+__pycache__
+/output
+code.txt
+*.vscode
+*.pyc
+/.env
+gmail.json
+/translator.py
+/namehandler.py
+/debugger.py
+/resource/code.txt
+translation.yaml
+/M4T
+/test*

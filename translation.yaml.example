@@ -1,0 +1,46 @@
+{
+    "Sakura-OpenAI-api": {
+        "name": "sakura",
+        "type": "api",
+        "retry_count": 3,
+        "key": "EMPTY",
+        "endpoint": "http://localhost:7999/v1"
+    },
+    # "Baichuan-api": {
+    #     "name": "Baichuan2-Turbo",
+    #     "type": "api",
+    #     "retry_count": 3,
+    #     "key": ""
+    # },
+    "Gemini-Pro-api": {
+        "name": "gemini-pro",
+        "type": "api",
+        "retry_count": 3,
+        "key": ""
+    },
+    "Poe-api": {
+        "name": "Gemini-Pro",
+        "type": "api",
+        "retry_count": 3,
+        "key": ""
+    },
+    "Poe-api-chatgpt": {
+        "name": "ChatGPT",
+        "type": "api",
+        "retry_count": 3,
+        "key": ""
+    },
+    "Poe-api-gpt3.5": {
+        "name": "GPT-3.5-Turbo",
+        "type": "api",
+        "retry_count": 3,
+        "key": ""
+    },
+    "OpenAI-GPT-3.5-Turbo-api": {
+        "name": "gpt-3.5-turbo",
+        "type": "api",
+        "retry_count": 3,
+        "key": "",
+        "endpoint":  "https://api.openai.com/v1"
+    }
+}
