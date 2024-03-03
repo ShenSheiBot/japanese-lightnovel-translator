@@ -7,13 +7,13 @@ import re
 
 config = load_config()
 
-if not os.path.exists(f"output/{config['CN_TITLE']}"):
-    name_convention = {}
-else:
+if os.path.exists(f"output/{config['CN_TITLE']}/names.json"):
     with open(f"output/{config['CN_TITLE']}/names.json", encoding='utf-8') as f: 
         names = json.loads(f.read())
         names = {k: v for k, v in sorted(names.items(), key=lambda item: len(item[0]), reverse=True)}
         name_convention = names
+else:
+    name_convention = {}
     
 
 change_list = set()

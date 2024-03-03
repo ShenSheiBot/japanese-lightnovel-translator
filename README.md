@@ -36,7 +36,7 @@ JP_TITLE=[Japanese Book Name]
 TRANSLATION_TITLE_RETRY_COUNT=[Retry Count for Batch Translation of EPUB Titles]
 ```
 
-3. 将文件 `translation.yaml.example` 重命名为 `translation.yaml` 并且填入你的 [Gemini API keys](https://aistudio.google.com/app/u/0/apikey?pli=1) 与 [Poe API keys](https://poe.com/api_key)。
+1. 将文件 `translation.yaml.example` 重命名为 `translation.yaml` 并且填入你的 [Gemini API keys](https://aistudio.google.com/app/u/0/apikey?pli=1) 与 [Poe API keys](https://poe.com/api_key)。Gemini API免费。如果没有Poe API key，可以删去相关翻译配置。在靠上的翻译配置会优先使用，失败后会尝试使用靠下的翻译配置。全部失败后会回落到原文。如果没有在本机部署SakuraLLM或使用Sakura公用API，也可以删去Sakura的翻译配置。
 
 ```yaml
 {

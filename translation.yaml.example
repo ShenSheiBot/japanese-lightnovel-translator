@@ -6,12 +6,6 @@
         "key": "EMPTY",
         "endpoint": "http://localhost:7999/v1"
     },
-    # "Baichuan-api": {
-    #     "name": "Baichuan2-Turbo",
-    #     "type": "api",
-    #     "retry_count": 3,
-    #     "key": ""
-    # },
     "Gemini-Pro-api": {
         "name": "gemini-pro",
         "type": "api",

@@ -19,13 +19,10 @@ openai = "1.12.0"
 protobuf = "^4.25.2"
 pyperclip = "^1.8.2"
 PyYAML = "^6.0.1"
-selenium = "^4.17.2"
 tqdm = "^4.66.1"
-undetected_chromedriver = "^3.5.3"
 google-generativeai = "^0.3.2"
 pyzipper = "^0.3.6"
 jupyterlab = "^4.0.10"
-transformers = "^4.36.2"
 ipywidgets = "^8.1.1"
 sentencepiece = "^0.1.99"
 google-cloud-vision = "^3.5.0"
@@ -36,12 +33,10 @@ markdown = "^3.5.2"
 shutils = "^0.1.0"
 accelerate = "^0.26.1"
 bitsandbytes = "^0.42.0"
-torch = {version = "^2.2.0+cu121", source = "pytorch-gpu-src"}
-torchvision = {version = "^0.17.0+cu121", source = "pytorch-gpu-src"}
-torchaudio = {version = "^2.2.0+cu121", source = "pytorch-gpu-src"}
 ja-sentence-segmenter = "^0.0.2"
 starlette-context = "^0.3.6"
 pydantic-settings = "^2.2.1"
+html5lib = "^1.1"
 
 [[tool.poetry.source]]
 name = "pytorch-gpu-src"

@@ -9,7 +9,6 @@ from utils import txt_to_html, split_string_by_length, sep, postprocessing, remo
 from utils import validate, remove_header, load_config, remove_leading_numbers, get_leading_numbers
 from utils import has_chinese, fix_repeated_chars, update_content, has_kana, replace_section_titles
 from utils import zip_folderPyzipper, SqlWrapper
-from webchat import PoeChatApp
 from loguru import logger
 from prompt import generate_prompt, change_list, name_convention
 import re
