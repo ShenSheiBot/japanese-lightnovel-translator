@@ -43,12 +43,6 @@ def translate(jp_text, mode="translation", dryrun=False):
             prompt = generate_prompt(jp_text, mode=mode)
             logger.info("\n-------- Prompt --------\n\n" + prompt + "\n------------------------\n\n")
         
-        if mode == "title_translation":
-            if 'Poe' not in name:
-                continue
-            else:
-                model['name'] = "ChatGPT"
-        
         retry_count = model['retry_count']
         
         logger.info("Translating using " + name + " ...")
@@ -100,24 +94,7 @@ def translate(jp_text, mode="translation", dryrun=False):
                 
         ### Web translation
         elif model['type'] == 'web':
-            global webapp
-            if webapp is None:
-                if model['backend'] == 'poe':
-                    webapp = PoeChatApp(dryrun)
-                else:
-                    raise ValueError("Invalid backend.")
-            if mode == "title_translation":
-                webapp.newchat(name=model['name'])
-            while flag and retry_count > 0:
-                cn_text = webapp.comm(prompt)
-                cn_text = remove_header(cn_text)
-                if not validate(jp_text, cn_text):
-                    logger.critical("Web invalid response: " + cn_text)
-                    webapp.newchat(name)
-                    webapp.random_sleep()
-                else:
-                    flag = False
-                retry_count -= 1
+            raise ValueError("Web translation is not supported.")
                 
         if not flag:
             break
@@ -251,7 +228,8 @@ def main():
                         title_retry_count -= 1
                 
                 if len(cn_titles_) != len(jp_titles_):
-                    raise ValueError("Title translation failed.")
+                    logger.error("Title translation failed.")
+                    cn_titles_ = jp_titles_
                     
                 for cn_title, jp_title in zip(cn_titles_, jp_titles_):
                     if not has_kana(jp_title) and not has_chinese(jp_title):
