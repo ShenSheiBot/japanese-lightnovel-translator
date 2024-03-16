@@ -264,12 +264,18 @@ def gemini_fix(text):
     text = text.replace("それよりも", "在那之前")
     text = text.replace("ッ", "")
     text = text.replace("vagina", "小穴")
+    text = text.replace("兄様", "兄长大人")
+    text = text.replace("兄样", "兄长大人")
+    text = text.replace("姐様", "姐姐大人")
+    text = text.replace("姐样", "姐姐大人")
     text = text.replace("様", "大人")
     text = text.replace("ちゃん", "酱")
     # If text immediate before and after chan is not English character
     text = re.sub(r'(?<![A-Za-z])chan(?![A-Za-z])', "酱", text)
     # same with san
     text = re.sub(r'(?<![A-Za-z])san(?![A-Za-z])', "桑", text)
+    # same with sama
+    text = re.sub(r'(?<![A-Za-z])sama(?![A-Za-z])', "大人", text)
     return text
 
 
@@ -433,9 +439,19 @@ def convert_san(text, name_convention):
                 return before_san + "先生"
         return match.group(0)
     
+    def replace_sama(match):
+        before_sama = match.group(1)
+        for i in range(5, 0, -1):
+            if before_sama[-i:] in name_convention or before_sama[-i:] in cn_names:
+                return before_sama + "大人"
+        return match.group(0)
+    
     text = re.sub(r"(.{1,5})さん", replace_san, text)
     text = re.sub(r"(.{1,5})san", replace_san, text)
     text = re.sub(r"(.{1,5})桑", replace_san, text)
+    text = re.sub(r"(.{1,5})样", replace_sama, text)
+    text = re.sub(r"(.{1,5})先生", replace_sama, text)
+    text = re.sub(r"(.{1,5})小姐", replace_sama, text)
 
     return text.replace("さん", "桑").replace("san", "桑")
 
@@ -443,7 +459,7 @@ def convert_san(text, name_convention):
 ## Check if the translation is valid
 def validate(input, text, name_convention=None):
     lines = text.split("\n")
-            
+
     # Number of new line ratio
     text_new_line_count = text.count("\n")
     input_new_line_count = input.count("\n")
@@ -451,7 +467,7 @@ def validate(input, text, name_convention=None):
         if text_new_line_count / input_new_line_count < 0.5:
             logger.critical("Too few new lines.")
             return False
-        
+
     if contains_russian_characters(text):
         logger.critical("Russian characters detected.")
         return False
@@ -462,7 +478,11 @@ def validate(input, text, name_convention=None):
         logger.critical("Tibetan characters detected.")
         return False
     for i, line in enumerate(lines):
-        if "】是女性" in line or "】是男性" in line:
+        if (
+            "】是女性" in line
+            or "】是男性" in line
+            or ("身份有" and "别名有" in line)
+        ):
             logger.critical("Translation background entered content")
             return False
         if i == 0 and "翻译" in line and ("：" in line or ":" in line):

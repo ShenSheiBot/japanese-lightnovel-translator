@@ -84,6 +84,8 @@ def to_json(s):
                     
         # if not has_kana(jp_name) and not has_kana(cn_name) and has_chinese(jp_name) and has_chinese(cn_name):
         #     cn_name = postprocessing(cn_name)
+        if "・" not in jp_name and ("・" in cn_name or "·" in cn_name):
+            j[jp_name] = cn_name.replace("・", "").replace("·", "")
         # if "・" in jp_name and "・" not in cn_name and "·" not in cn_name:
         #     logger.critical(f"Missing ・: {jp_name} {cn_name}")
         #     return None, j

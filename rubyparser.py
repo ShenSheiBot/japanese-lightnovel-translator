@@ -40,6 +40,8 @@ if __name__ == "__main__":
             except Exception as e:
                 print(e)
                 continue
+    else:
+        dictionary = rubi
                 
     # Dump the final dictionary to CN_TITLE/names.json
     with open(os.path.join('output', config['CN_TITLE'], 'ruby.json'), 'w', encoding='utf-8') as f:

@@ -107,13 +107,13 @@ def find_aliases(names, ruby):
             visited = set([entry_name])
             neighbor_name = find_highest_count_neighbor(entry_name, names, visited)
 
-            if neighbor_name is None:
-                # Search neighbors' neighbors
-                for alias in entry_data['alias']:
-                    if alias in names:
-                        neighbor_name = find_highest_count_neighbor(alias, names, visited)
-                        if neighbor_name:
-                            break
+            # if neighbor_name is None:
+            #     # Search neighbors' neighbors
+            #     for alias in entry_data['alias']:
+            #         if alias in names:
+            #             neighbor_name = find_highest_count_neighbor(alias, names, visited)
+            #             if neighbor_name:
+            #                 break
 
             if neighbor_name:
                 merge_tags(entry_name, neighbor_name, names)
@@ -136,6 +136,8 @@ def tagmap(tag):
         return "地名"
     if tag.startswith("术语") or tag.startswith("術語") or tag.endswith("術語") or tag.endswith("术语"):
         return "術語"
+    if "性别" in tag or "性別" in tag:
+        return "人名"
     else:
         return tag
 
