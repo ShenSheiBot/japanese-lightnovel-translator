@@ -8,9 +8,10 @@ from loguru import logger
 from copy import deepcopy
 from ebooklib import epub
 import yaml
-import pyzipper
 import sys
 import zipfile
+import py7zr
+from py7zr import FILTER_LZMA2, FILTER_CRYPTO_AES256_SHA256, PRESET_DEFAULT, FILTER_ARM
 import functools
 from ja_sentence_segmenter.common.pipeline import make_pipeline
 from ja_sentence_segmenter.concatenate.simple_concatenator import concatenate_matching
@@ -126,6 +127,8 @@ def replace_quotes(text):
     text = text.replace("〕", "」")
     text = text.replace("‘", "『")
     text = text.replace("’", "』")
+    text = text.replace("(", "（")
+    text = text.replace(")", "）")
     text = re.sub(r'"(.*?)"', r'「\1」', text)
     text = re.sub(r"'(.*?)'", r'『\1』', text)
     return text
@@ -135,7 +138,9 @@ def fix_repeated_chars(line):
     pattern = r'([！a-zA-Z0-9_\u4E00-\u9FFF\u3040-\u30FF])\1{5,}'
     line = re.sub(pattern, r'\1\1\1\1\1', line)
     line = re.sub(r'[\.]{6,}', '……', line)
-    line = re.sub(r'[\.]{4,5}', '…', line)
+    line = re.sub(r'[\.]{3,5}', '…', line)
+    line = re.sub(r'[・]{6,}', '……', line)
+    line = re.sub(r'[・]{3,5}', '…', line)
     line = replace_quotes(line)
     return line
 
@@ -258,7 +263,13 @@ def gemini_fix(text):
     text = text.replace("を重ね", "重复")
     text = text.replace("それよりも", "在那之前")
     text = text.replace("ッ", "")
-    text = text.replace("さん", "先生")
+    text = text.replace("vagina", "小穴")
+    text = text.replace("様", "大人")
+    text = text.replace("ちゃん", "酱")
+    # If text immediate before and after chan is not English character
+    text = re.sub(r'(?<![A-Za-z])chan(?![A-Za-z])', "酱", text)
+    # same with san
+    text = re.sub(r'(?<![A-Za-z])san(?![A-Za-z])', "桑", text)
     return text
 
 
@@ -295,8 +306,10 @@ def postprocessing(text, verbose=True):
     filtered_lines = []
     pattern = re.compile(r'^[\u0020\u3000-\u303F\u4E00-\u9FFF]*=(?!.*[\u3002])[\u0020\u3000-\u303F\u4E00-\u9FFF]*$')
 
-    for line, original_line in zip(lines, original_lines):
-        removed_keywords = ["translation", "-" * 8]
+    for i, (line, original_line) in enumerate(zip(lines, original_lines)):
+        if i == 0 and "翻译" in line and ("：" in line or ":" in line):
+            continue
+        removed_keywords = ["translation", "-" * 8 + "以下"]
         removal = False
         if pattern.search(line):
             logger.info("Removed line: " + line)
@@ -313,6 +326,20 @@ def postprocessing(text, verbose=True):
             if verbose:
                 logger.debug("Modified line: " + fix_repeated_chars(original_line) + " -> " + line)
         if not removal:
+            if line.count('"') == 1:
+                if line.strip().startswith('"'):
+                    line = line.replace('"', "「")
+                if line.strip().endswith('"'):
+                    line = line.replace('"', "」")
+            line = line.replace(',', '，')
+            line = line.replace('!', '！')
+            line = line.replace('?', '？')
+            line = line.replace(';', '；')
+            line = line.replace(':', '：')
+            line = line.replace('...', '…')
+            line = line.replace('~', '～')
+            line = line.replace('〈', '《')
+            line = line.replace('〉', '》')
             filtered_lines.append(line)
     text = "\n".join(filtered_lines)
     return text
@@ -338,8 +365,8 @@ def contains_trad_chars(check_string):
     for char in check_string:
         if char in trad_chars:
             return True
-        
-        
+
+
 def num_failure(input, text, name_convention=None):
     count = 0 
     if name_convention is not None:
@@ -365,7 +392,8 @@ def get_appeared_names(text, name_convention=None):
             if name in name_ and name != name_:
                 to_del.append(name)
     for name in to_del:
-        del appeared_names[name]
+        if name in appeared_names:
+            del appeared_names[name]
     return appeared_names
 
 
@@ -385,6 +413,33 @@ def validate_name_convention(input, text, name_convention=None):
     return True
 
 
+def convert_san(text, name_convention):
+    cn_names = {name_convention[jp_name]["cn_name"]: jp_name for jp_name in name_convention}
+    for cn_name in cn_names:
+        text = text.replace(f"【{cn_name}】", cn_name)
+    
+    def replace_san(match):
+        before_san = match.group(1)
+        for i in range(5, 0, -1):
+            if before_san[-i:] in name_convention:
+                gender = name_convention[before_san[-i:]]["info"]
+            elif before_san[-i:] in cn_names:
+                gender = name_convention[cn_names[before_san[-i:]]]["info"]
+            else:
+                continue
+            if "女性" in gender:
+                return before_san + "小姐"
+            elif "男性" in gender:
+                return before_san + "先生"
+        return match.group(0)
+    
+    text = re.sub(r"(.{1,5})さん", replace_san, text)
+    text = re.sub(r"(.{1,5})san", replace_san, text)
+    text = re.sub(r"(.{1,5})桑", replace_san, text)
+
+    return text.replace("さん", "桑").replace("san", "桑")
+
+
 ## Check if the translation is valid
 def validate(input, text, name_convention=None):
     lines = text.split("\n")
@@ -400,13 +455,15 @@ def validate(input, text, name_convention=None):
     if contains_russian_characters(text):
         logger.critical("Russian characters detected.")
         return False
-    if contains_arabic_characters(text):
-        logger.critical("Arabic characters detected.")
-        return False
+    # if contains_arabic_characters(text):
+    #     logger.critical("Arabic characters detected.")
+    #     return False
     if contains_tibetan_characters(text):
         logger.critical("Tibetan characters detected.")
         return False
-    for line in lines:
+    for i, line in enumerate(lines):
+        if i == 0 and "翻译" in line and ("：" in line or ":" in line):
+            continue
         if "翻译" in line or "orry" in line or "抱歉" in line or "对不起" in line \
         or "pologize" in line or "language model" in line or "able" in line or "性描写" in line \
         or "AU" in line or "policy" in line:
@@ -419,7 +476,7 @@ def validate(input, text, name_convention=None):
                 score += int(keyword in line)
             score += int(len(line) < 10)
             if score >= 3:
-                logger.critical("Unethical translation detected.")
+                logger.critical(f"Unethical translation detected.: {line}")
                 return False
     if len(text) == 0:
         logger.critical("No translation provided.")
@@ -431,7 +488,10 @@ def validate(input, text, name_convention=None):
     # Remove all special chars
     text = ''.join(re.findall(r'[\u4e00-\u9fff.,!?()。，！？《》“”「」\w\sーァ-ヶ]', text))
     text = text.replace('XX', '--')
-    result = detect_language(text) == "Chinese"
+    if detect_language(input) == "Japanese":
+        result = detect_language(text) == "Chinese"
+    else:
+        result = True
     if not result:
         logger.critical("Translation is not in Chinese.")
     return result
@@ -519,39 +579,46 @@ def update_content(item, new_book, title_buffer, updated_content):
             href = link.attrs['href']
             if href.endswith('css'):
                 modified_item.add_link(href=href, rel='stylesheet', type='text/css')
-                
 
-def zip_folderPyzipper(folder_path, output_path):
-    """Zip the contents of an entire folder (with that folder included
-    in the archive). Empty subfolders will be included in the archive
-    as well.
+
+def zip_folder_7z(folder_path, output_path, password='114514'):
     """
-    # Retrieve the paths of the folder contents.
-    contents = os.walk(folder_path)
-    try:
-        zip_file = pyzipper.AESZipFile(output_path, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES)
-        zip_file.pwd = b'114514'
-        for root, _, files in contents:
-            relative_root = os.path.basename(root)
-            for file_name in files:
-                if 'names_updated.json' in files and file_name == 'names.json':
+    Create a password-protected 7z file with encrypted file names from the contents of a folder.
+    Only include .epub and .json files, except for 'names.json' if 'names_updated.json' exists in the same folder.
+
+    :param folder_path: Path to the folder to be archived.
+    :param output_path: Path where the 7z file will be created.
+    :param password: Password for the 7z archive.
+    """
+    filters = [
+        {"id": FILTER_ARM},
+        {"id": FILTER_LZMA2, "preset": PRESET_DEFAULT},
+        {"id": FILTER_CRYPTO_AES256_SHA256},
+    ]
+    with py7zr.SevenZipFile(output_path, 'w', password=password, filters=filters) as archive:
+        # Add ad.jpg to the archive
+        ad_path = os.path.join(os.getcwd(), 'ad.jpg')
+        archive.write(ad_path, 'ad.jpg')
+
+        for root, dirs, files in os.walk(folder_path):
+            # Check for 'names_updated.json' in the current folder
+            names_updated_exists = 'names_updated.json' in files
+
+            # Filter the files to include only .epub and .json files
+            files_to_add = [f for f in files if f.endswith('.epub') or f.endswith('.json')]
+
+            for file_name in files_to_add:
+                # Skip 'names.json' if 'names_updated.json' exists in the same folder
+                if names_updated_exists and file_name == 'names.json':
                     continue
-                if not file_name.endswith('.epub') and not file_name.endswith('json'):
-                    continue
-                absolute_path = os.path.join(root, file_name)
-                print("Adding '%s' to archive." % absolute_path)
-                zip_file.write(absolute_path, relative_root + os.sep + file_name)
-            zip_file.write(os.getcwd() + os.sep + 'ad.jpg', relative_root + os.sep + 'ad.jpg')
-        print("'%s' created successfully." % output_path)
-    except IOError as message:
-        print(message)
-        sys.exit(1)
-    except zipfile.BadZipfile as message:
-        print(message)
-        sys.exit(1)
-    finally:
-        zip_file.close()
-        
+
+                file_path = os.path.join(root, file_name)
+                archive_path = os.path.relpath(file_path, folder_path)  # Preserve folder structure within the archive
+                archive.write(file_path, archive_path)
+
+        # Encrypt the file names
+        archive.set_encrypted_header(True)
+
 
 class SqlWrapper:
     def __init__(self, db_path):
@@ -850,18 +917,34 @@ def extract_ruby_from_epub(epub_path):
             if file.endswith('.xhtml'):
                 # Parse the XHTML file
                 tree = etree.parse(os.path.join(root, file))
+                visited_ruby = set()
                 
                 # Find all the <ruby> elements and extract the text
                 for ruby in tree.xpath('//html:ruby', namespaces=namespaces):
-                    rb = ruby.xpath('.//html:rb', namespaces=namespaces)
-                    rt = ruby.xpath('.//html:rt', namespaces=namespaces)
+                    rb_text = ''
+                    rt_text = ''
                     
-                    # Sometimes <rb> or <rt> might be missing, so check if they exist before trying to access text
-                    rb_text = rb[0].text if rb else ''
-                    rt_text = rt[0].text if rt else ''
+                    if ruby in visited_ruby:
+                        continue
+                    else:
+                        visited_ruby = set()
+                    
+                    while ruby is not None:
+                        rb = ruby.xpath('.//html:rb', namespaces=namespaces)
+                        rt = ruby.xpath('.//html:rt', namespaces=namespaces)
+                        
+                        # Sometimes <rb> or <rt> might be missing, so check if they exist before trying to access text
+                        rb_text += rb[0].text if rb else ''
+                        rt_text += rt[0].text if rt else ''
+                        
+                        # Check if the next sibling is also a <ruby> element
+                        ruby = ruby.getnext()
+                        visited_ruby.add(ruby)
+                        if ruby is None or ruby.tag != '{http://www.w3.org/1999/xhtml}ruby':
+                            break
                     
                     ruby_texts[rt_text] = rb_text
-
+    
     # Clean up the temporary directory
     os.system('rm -rf temp_epub')
     return ruby_texts
@@ -887,6 +970,10 @@ def parse_gpt_json(response):
 
     response = response[start_idx:end_idx]
     response = response.replace('\'', '\"')
+    # Replace trailing comma before closing bracket
+    response = re.sub(r',\s*}', '}', response)
+    # Remove line containing not exactly four quotes
+    response = ','.join([line for line in response.split(',') if line.count('"') == 4])
     dictionary = json.loads(response)
     return dictionary
 

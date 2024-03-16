@@ -8,13 +8,14 @@ from apichat import OpenAIChatApp, GoogleChatApp, PoeAPIChatApp, BaichuanChatApp
 from utils import txt_to_html, split_string_by_length, sep, postprocessing, remove_duplicate, gemini_fix
 from utils import validate, remove_header, load_config, remove_leading_numbers, get_leading_numbers
 from utils import has_chinese, fix_repeated_chars, update_content, has_kana, replace_section_titles
-from utils import zip_folderPyzipper, SqlWrapper
+from utils import SqlWrapper, zip_folder_7z, convert_san
 from loguru import logger
 from prompt import generate_prompt, change_list, name_convention
 import re
 import warnings
 import yaml
 import time
+import uuid
 
 
 warnings.filterwarnings('ignore', category=XMLParsedAsHTMLWarning)
@@ -31,17 +32,19 @@ def translate(jp_text, mode="translation", dryrun=False):
     
     if dryrun:
         return "待翻译……"
+    
+    ruuid = uuid.uuid4()
 
-    logger.info("\n------ JP Message ------\n\n" + jp_text + "\n------------------------\n\n")
+    logger.info(f"\n------ {ruuid} JP ------\n\n" + jp_text + "\n------------------------\n\n")
     
     for name, model in translation_config.items():
         
         if "Sakura" in name:
             prompt = generate_prompt(jp_text, mode="sakura")
-            logger.info("\n-------- Prompt --------\n\n" + prompt + "\n------------------------\n\n")
+            logger.info(f"\n-------- {ruuid} Prompt --------\n\n" + prompt + "\n------------------------\n\n")
         else:
             prompt = generate_prompt(jp_text, mode=mode)
-            logger.info("\n-------- Prompt --------\n\n" + prompt + "\n------------------------\n\n")
+            logger.info(f"\n-------- {ruuid} Prompt --------\n\n" + prompt + "\n------------------------\n\n")
         
         retry_count = model['retry_count']
         
@@ -99,10 +102,9 @@ def translate(jp_text, mode="translation", dryrun=False):
         if not flag:
             break
         
-    if mode == "remove_annotation":
-        return translate(cn_text, mode="polish", dryrun=dryrun)
-
-    logger.info("\n------ CN Message ------\n\n" + cn_text + "\n------------------------\n\n")
+    # Fix san
+    cn_text = convert_san(cn_text, name_convention=name_convention)
+    logger.info(f"\n-------- {ruuid} CN ------\n\n" + cn_text + "\n------------------------\n\n")
                         
     return cn_text
 
@@ -121,14 +123,14 @@ def post_translate(cn_text):
             
             response = ""
             count = 0
-            COUNT = 5
+            COUNT = 1
             while count < COUNT and ("翻译" in response or "抱歉" in response or has_kana(response) 
                                      or not has_chinese(response) or len(response) / len(line) < 0.5 
                                      or len(response) / len(line) > 1.5):
                 try:
-                    google_chat = GoogleChatApp(api_key=translation_config['Gemini-Pro-api']['key'], 
-                                                model_name='gemini-pro', temperature=0.6)
-                    response = google_chat.chat(prompt)
+                    poe_chat = PoeAPIChatApp(api_key=translation_config['Poe-claude-api']['key'],
+                                             model_name=translation_config['Poe-claude-api']['name'])
+                    response = poe_chat.chat(prompt)
                 except APITranslationFailure as e:
                     logger.critical(f"API translation failed: {e}")
                     count += 1
@@ -155,7 +157,6 @@ def main():
     logger.add(f"output/{config['CN_TITLE']}/info.log", colorize=True, level="DEBUG")
     parser = argparse.ArgumentParser()
     parser.add_argument("--dryrun", action="store_true")
-    parser.add_argument("--polish", action="store_true")
     args = parser.parse_args()
 
     # Open the EPUB file
@@ -206,7 +207,7 @@ def main():
                 
                 while len(cn_titles_) != len(jp_titles_) and title_retry_count > 0:
                     ### Start translation
-                    if args.polish:
+                    if args.dryrun:
                         cn_text = jp_text
                     elif jp_text in title_buffer:
                         cn_text = title_buffer[jp_text]
@@ -230,11 +231,12 @@ def main():
                 if len(cn_titles_) != len(jp_titles_):
                     logger.error("Title translation failed.")
                     cn_titles_ = jp_titles_
-                    
-                for cn_title, jp_title in zip(cn_titles_, jp_titles_):
-                    if not has_kana(jp_title) and not has_chinese(jp_title):
-                        cn_title = jp_title
-                    title_buffer[remove_leading_numbers(jp_title)] = remove_leading_numbers(cn_title)
+                
+                if not args.dryrun:
+                    for cn_title, jp_title in zip(cn_titles_, jp_titles_):
+                        if not has_kana(jp_title) and not has_chinese(jp_title):
+                            cn_title = jp_title
+                        title_buffer[remove_leading_numbers(jp_title)] = remove_leading_numbers(cn_title)
 
         replace_section_titles(cn_book.toc, title_buffer)
         replace_section_titles(modified_book.toc, title_buffer, cnjp=True)
@@ -266,10 +268,10 @@ def main():
                 soup = BeautifulSoup(item.content.decode("utf-8"), "html5lib")
                 cn_soup = BeautifulSoup(item.content.decode("utf-8"), "html5lib")
                 
-                for rt_tag in soup.find_all("rt"):
-                    rt_tag.decompose()
-                for rt_tag in cn_soup.find_all("rt"):
-                    rt_tag.decompose()
+                # for rt_tag in soup.find_all("rt"):
+                #     rt_tag.decompose()
+                # for rt_tag in cn_soup.find_all("rt"):
+                #     rt_tag.decompose()
 
                 if item.id == "message.xhtml":
                     # Find the div that comes after the <span>简介：</span>
@@ -332,12 +334,9 @@ def main():
                                     cn_text = buffer[jp_text]
                                 else:
                                     ### Start translation
-                                    if args.polish:
-                                        cn_text = translate(jp_text, mode="remove_annotation", dryrun=args.dryrun)
-                                    else:
-                                        cn_text = translate(jp_text, dryrun=args.dryrun)
-                                        cn_text = gemini_fix(cn_text)
-                                        cn_text = post_translate(cn_text)
+                                    cn_text = translate(jp_text, dryrun=args.dryrun)
+                                    cn_text = gemini_fix(cn_text)
+                                    cn_text = post_translate(cn_text)
                                     ### Translation finished
                                     
                                     cn_text = remove_duplicate(cn_text)
@@ -390,8 +389,6 @@ def main():
                                 cn_title = title_buffer[jp_title]
                             elif not has_kana(jp_title) or "作者" in jp_title:
                                 cn_title = jp_title
-                            elif args.polish:
-                                cn_title = jp_title
                             else:
                                 ### Start translation
                                 cn_title = translate(jp_title, dryrun=args.dryrun)
@@ -440,6 +437,7 @@ def main():
                 # Update titles to CN titles or CN+JP titles in TOC
                 content = item.content.decode("utf-8")
                 cn_content = deepcopy(content)
+                jp_titles.sort(key=lambda x: len(x), reverse=True)
                 for jp_title in jp_titles:
                     if jp_title in title_buffer:
                         cn_title = title_buffer[jp_title]
@@ -468,7 +466,11 @@ def main():
     
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cnjp.epub", modified_book)
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cn.epub", cn_book)
-    zip_folderPyzipper(f"output/{config['CN_TITLE']}/", f"output/{config['CN_TITLE']}/{config['CN_TITLE']}.zip")
+    zip_folder_7z(
+        f"output/{config['CN_TITLE']}/", 
+        f"output/{config['CN_TITLE']}/{config['CN_TITLE']}【密码为前10字】.7z",
+        password=config['CN_TITLE'][:10]
+    )
 
 
 if __name__ == "__main__":
