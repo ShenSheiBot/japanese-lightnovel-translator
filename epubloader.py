@@ -8,7 +8,7 @@ from apichat import OpenAIChatApp, GoogleChatApp, PoeAPIChatApp, BaichuanChatApp
 from utils import txt_to_html, split_string_by_length, sep, postprocessing, remove_duplicate, gemini_fix
 from utils import validate, remove_header, load_config, remove_leading_numbers, get_leading_numbers
 from utils import has_chinese, fix_repeated_chars, update_content, has_kana, replace_section_titles
-from utils import SqlWrapper, zip_folder_7z, convert_san
+from utils import SqlWrapper, zip_folder_7z, convert_san, concat_kanji_rubi
 from loguru import logger
 from prompt import generate_prompt, change_list, name_convention
 import re
@@ -207,7 +207,7 @@ def main():
                 
                 while len(cn_titles_) != len(jp_titles_) and title_retry_count > 0:
                     ### Start translation
-                    if args.dryrun:
+                    if (not has_kana(jp_text) and not has_chinese(jp_text)) or args.dryrun:
                         cn_text = jp_text
                     elif jp_text in title_buffer:
                         cn_text = title_buffer[jp_text]
@@ -325,10 +325,13 @@ def main():
                                 img_pattern = re.compile(r'<img[^>]+>')
                                 imgs = img_pattern.findall(jp_text)
                                 jp_text = img_pattern.sub('', jp_text)
+                                jp_text = concat_kanji_rubi(jp_text)
 
                                 if len(jp_text.strip()) == 0:
                                     cn_text = ""
                                     decomposable = False
+                                elif (not has_kana(jp_text) and not has_chinese(jp_text)):
+                                    cn_text = jp_text
                                 elif jp_text in buffer and validate(jp_text, buffer[jp_text], name_convention) and \
                                 all([item not in jp_text for item in change_list]):
                                     cn_text = buffer[jp_text]

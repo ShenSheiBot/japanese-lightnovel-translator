@@ -2,7 +2,7 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 import re
 from tqdm import tqdm
-from utils import split_string_by_length, load_config
+from utils import split_string_by_length, load_config, concat_kanji_rubi
 import re
 
 
@@ -48,6 +48,7 @@ def main(book_name):
                             # Remove images
                             img_pattern = re.compile(r'<img[^>]+>')
                             jp_text = img_pattern.sub('', jp_text)
+                            jp_text = concat_kanji_rubi(jp_text)
 
                             if len(jp_text.strip()) != 0:
                                 ### Start translation

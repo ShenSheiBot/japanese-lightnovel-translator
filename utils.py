@@ -24,10 +24,10 @@ from lxml import etree
 
 with open("translation.yaml", "r") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)
-    
+
 with open("resource/trad_char.txt", "r", encoding="utf-8") as f:
     trad_chars = set(f.read())
-    
+
 with open("resource/jp_char_map.json", "r", encoding="utf-8") as f:
     jp_char_map = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -107,7 +107,7 @@ def load_prompt(filename="resource/promptv2.txt"):
         content = f.read()
         return content
 
-    
+
 def load_random_paragraph(filename="resource/sample.txt", num_chars=500):
     with open(filename, 'r', encoding="utf-8") as f:
         content = f.read()
@@ -118,7 +118,7 @@ def load_random_paragraph(filename="resource/sample.txt", num_chars=500):
 
         start_index = random.randint(0, content_length - num_chars)
         return content[start_index:start_index + num_chars]
-    
+
 
 def replace_quotes(text):
     text = text.replace("“", "「")
@@ -132,8 +132,8 @@ def replace_quotes(text):
     text = re.sub(r'"(.*?)"', r'「\1」', text)
     text = re.sub(r"'(.*?)'", r'『\1』', text)
     return text
-    
-    
+
+
 def fix_repeated_chars(line):
     pattern = r'([！a-zA-Z0-9_\u4E00-\u9FFF\u3040-\u30FF])\1{5,}'
     line = re.sub(pattern, r'\1\1\1\1\1', line)
@@ -462,6 +462,9 @@ def validate(input, text, name_convention=None):
         logger.critical("Tibetan characters detected.")
         return False
     for i, line in enumerate(lines):
+        if "】是女性" in line or "】是男性" in line:
+            logger.critical("Translation background entered content")
+            return False
         if i == 0 and "翻译" in line and ("：" in line or ":" in line):
             continue
         if "翻译" in line or "orry" in line or "抱歉" in line or "对不起" in line \
@@ -497,7 +500,7 @@ def validate(input, text, name_convention=None):
     return result
 
 
-## Remove header 
+## Remove header
 def remove_header(text):
     first_line = text.split("\n")[0]
     if "翻译" in first_line and "：" in first_line:
@@ -665,8 +668,8 @@ class SqlWrapper:
 
     def __del__(self):
         self.close()
-        
-        
+
+
 def get_consecutive_name_entities(entities, score_threshold=0.9):
     # Initialize variables
     consecutive_entities = []
@@ -857,11 +860,14 @@ def find_example_sentences(names, book):
 # 二（に）階（かい）堂（どう）亞（あ）子（こ）-> 二階堂亞子（にかいどうあこ）
 def concat_kanji_rubi(text):
     kanji_kana_groups = []
-    pattern = r'(([\u4E00-\u9FFF])\（([\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF]+)\）)+'
-    
+    pattern = r'(([\u4E00-\u9FFF])[\（\(]([\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF]+)[\）\)])+'
+
     def replacement(match):
         # Here we find all submatches of the Kanji-Kana pattern within the full match.
-        submatches = re.findall(r'([\u4E00-\u9FFF])\（([\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF]+)\）', match.group(0))
+        submatches = re.findall(
+            r"([\u4E00-\u9FFF])[\（\(]([\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF]+)[\）\)]",
+            match.group(0),
+        )
         kanjis = ''.join(submatch[0] for submatch in submatches)
         kanas = ''.join(submatch[1] for submatch in submatches)
         kanji_kana_groups.append(f'{kanas}')
