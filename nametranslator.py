@@ -1,4 +1,12 @@
-from utils import load_config, SqlWrapper, has_kana, has_chinese, postprocessing, find_example_sentences
+from utils import (
+    load_config,
+    SqlWrapper,
+    has_kana,
+    has_chinese,
+    postprocessing,
+    find_example_sentences,
+    contains_russian_characters,
+)
 import yaml
 import os
 import json
@@ -195,11 +203,17 @@ if __name__ == "__main__":
                             continue
 
             for name, (_, cn_name) in zip(name_list, response_json.items()):
+                info = list(names[name]["info"].keys())
+                for tag in info:
+                    if contains_russian_characters(tag):
+                        info.remove(tag)
+                if not has_kana(name) and not has_chinese(name):
+                    cn_name = name
                 names_processed[name] = {
                     "jp_name": name,
                     "cn_name": cn_name,
                     "alias": names[name]["alias"],
-                    "info": list(names[name]["info"].keys())
+                    "info": info
                 }
 
         print(total_names)

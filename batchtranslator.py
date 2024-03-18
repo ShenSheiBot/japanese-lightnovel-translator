@@ -53,7 +53,7 @@ def translate_wrapper(content: str):
         return
     cn_text = translate(content)
     cn_text = gemini_fix(cn_text)
-    cn_text = post_translate(cn_text)
+    # cn_text = post_translate(cn_text)
     buffer[content] = cn_text
 
 

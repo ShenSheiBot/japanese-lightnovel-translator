@@ -2,7 +2,7 @@ import random
 import re
 import os
 import ast
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString, Tag
 from hanziconv import HanziConv
 from loguru import logger
 from copy import deepcopy
@@ -315,7 +315,7 @@ def postprocessing(text, verbose=True):
     for i, (line, original_line) in enumerate(zip(lines, original_lines)):
         if i == 0 and "翻译" in line and ("：" in line or ":" in line):
             continue
-        removed_keywords = ["translation", "-" * 8 + "以下"]
+        removed_keywords = ["translation", "-" * 6 + "以下", "翻译" + "-" * 6, "-" * 6 + "中文"]
         removal = False
         if pattern.search(line):
             logger.info("Removed line: " + line)
@@ -406,17 +406,28 @@ def get_appeared_names(text, name_convention=None):
 def validate_name_convention(input, text, name_convention=None):
     # Name convention check
     appeared_names = get_appeared_names(input, name_convention)
+    violate_count = 0
+    text = text.replace("＝", "=").replace("・", "·").replace(" ", "")
     if name_convention is not None:
         for jp_name, cn_name in appeared_names.items():
-            if (
-                cn_name not in text and cn_name.replace("·", "・") not in text 
-                and cn_name.replace("・", "·") not in text
-                and jp_name not in text and jp_name.replace(" ", "") not in text
-                and convert_jp_char(cn_name) not in text
+            if len(jp_name) <= 2:
+                continue
+            if type(cn_name) is dict:
+                cn_name = cn_name["cn_name"]
+            cn_name = cn_name.replace("＝", "=").replace("・", "·").replace(" ", "")
+            alt_forms = [cn_name]
+            if convert_jp_char(cn_name) != cn_name:
+                alt_forms.append(convert_jp_char(cn_name))
+            if len(cn_name) > 3:
+                alt_forms.append(cn_name[:-1])
+            if len(cn_name) > 5:
+                alt_forms.append(cn_name[:-2])
+            if all(
+                [alt_form not in text for alt_form in alt_forms]
             ):
                 logger.critical(f"Name convention not followed: {jp_name} -> {cn_name}")
-                return False
-    return True
+                violate_count += 1
+    return violate_count
 
 
 def convert_san(text, name_convention):

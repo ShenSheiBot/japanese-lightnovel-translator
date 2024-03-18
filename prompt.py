@@ -50,10 +50,6 @@ def generate_prompt(text, mode="translation"):
         "回答形如：\n1 第一章的中文名\n2 第二章的中文名\n\n"
     elif mode == "sakura":
         prompt = "将下面的日文文本翻译成中文：\n"
-    elif mode == "polish":
-        with open(f"resource/polish_prompt.txt", "r") as f:
-            prompt = f.read()
-            return prompt + text
     else:
         raise ValueError(f"Unknown mode: {mode}")
     appeared_names = get_appeared_names(text, name_convention)
@@ -100,6 +96,8 @@ def generate_prompt(text, mode="translation"):
                         ppt += f"【{key}】是地名，应翻译为【{appeared_names[key]['cn_name']}】。\n"
                     elif "組織名" in appeared_names[key]['info']:
                         ppt += f"【{key}】是组织名，应翻译为【{appeared_names[key]['cn_name']}】。\n"
+                    else:
+                        ppt += f"【{key}】，应翻译为【{appeared_names[key]['cn_name']}】。\n"
             prompt = ppt + '\n' + prompt
 
         elif mode == "sakura":

@@ -8,7 +8,7 @@ from apichat import OpenAIChatApp, GoogleChatApp, PoeAPIChatApp, BaichuanChatApp
 from utils import txt_to_html, split_string_by_length, sep, postprocessing, remove_duplicate, gemini_fix
 from utils import validate, remove_header, load_config, remove_leading_numbers, get_leading_numbers
 from utils import has_chinese, fix_repeated_chars, update_content, has_kana, replace_section_titles
-from utils import SqlWrapper, zip_folder_7z, convert_san, concat_kanji_rubi
+from utils import SqlWrapper, zip_folder_7z, convert_san, concat_kanji_rubi, validate_name_convention
 from loguru import logger
 from prompt import generate_prompt, change_list, name_convention
 import re
@@ -25,7 +25,7 @@ with open("translation.yaml", "r") as f:
 webapp = None
 
 
-def translate(jp_text, mode="translation", dryrun=False):       
+def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False):       
     flag = True
     
     jp_text = fix_repeated_chars(jp_text)
@@ -64,31 +64,37 @@ def translate(jp_text, mode="translation", dryrun=False):
                 raise ValueError("Invalid model name.")
             
             name_violation_count = 0
+            min_violate_count = 10000
+            cn_text_bck = None
             while flag and retry_count > 0:
                 try:
                     cn_text = api_app.chat(prompt)
                     cn_text = remove_header(cn_text)
-                    cn_text_bck = None
                     
                     valid = validate(jp_text, cn_text, name_convention)
-                    # valid_name = validate_name_convention(jp_text, cn_text, name_convention)
-                    valid_name = True
+                    violate_count = validate_name_convention(jp_text, cn_text, name_convention)
+                    valid_name = violate_count == 0
+                    if skip_name_valid:
+                        valid_name = True
                     if not valid or not valid_name:
                         if valid and not valid_name:
                             name_violation_count += 1
-                            cn_text_bck = cn_text
+                            logger.critical(f"-------- {ruuid} Violation count {name_violation_count}")
+                            if violate_count < min_violate_count:
+                                min_violate_count = violate_count
+                                cn_text_bck = deepcopy(cn_text)
                         if name_violation_count > 3:
                             cn_text = cn_text_bck
-                            logger.critical("Seemingly invalid name convention, fallback to previous translation.")
+                            logger.critical(f"-------- {ruuid} Fallback to min violate translation.")
                             flag = False
                             break
-                        logger.critical("API invalid response: " + cn_text)
+                        logger.critical(f"-------- {ruuid} API invalid response: ---------\n" + cn_text)
                     else:
                         flag = False
                 except APITranslationFailure as e:
                     if "Connection error" in str(e) and retry_count == 1:
                         raise
-                    logger.critical(f"API translation failed: {e}")
+                    logger.critical(f"-------- {ruuid} API translation failed: {e} ----------")
                     pass
                 retry_count -= 1
                 
@@ -212,7 +218,7 @@ def main():
                     elif jp_text in title_buffer:
                         cn_text = title_buffer[jp_text]
                     else:
-                        cn_text = translate(jp_text, mode="title_translation", dryrun=args.dryrun)
+                        cn_text = translate(jp_text, mode="title_translation", dryrun=args.dryrun, skip_name_valid=True)
                         title_buffer[jp_text] = cn_text
                     ### Translation finished
                     
@@ -276,7 +282,11 @@ def main():
                 if item.id == "message.xhtml":
                     # Find the div that comes after the <span>简介：</span>
                     for soup_ in [soup, cn_soup]:
-                        intro_div = soup_.find('span', string='简介：').find_next_sibling('div')
+                        intro_div = soup_.find('span', string='简介：')
+                        if intro_div:
+                            intro_div.find_next_sibling('div')
+                        else:
+                            continue
 
                         # Check if the content inside the div doesn't already contain a <p> tag
                         if not intro_div.find('p'):
@@ -296,7 +306,12 @@ def main():
                     # Get consecutive paragraphs and titles
                     jp_text_collection = []
                     last_p = False
+                    
+                    img_sets = []
+                    
                     for p_tag, p_tag_ in zip(paragraphs, paragraphs_):
+                        if p_tag.name in ["img", "image"]:
+                            img_sets.append((p_tag, p_tag_))
                         if p_tag.name != "p":
                             jp_text_collection.append((p_tag.get_text(), p_tag.name, [p_tag], [p_tag_]))
                             last_p = False
@@ -337,7 +352,7 @@ def main():
                                     cn_text = buffer[jp_text]
                                 else:
                                     ### Start translation
-                                    cn_text = translate(jp_text, dryrun=args.dryrun)
+                                    cn_text = translate(jp_text, dryrun=args.dryrun, skip_name_valid=True)
                                     cn_text = gemini_fix(cn_text)
                                     cn_text = post_translate(cn_text)
                                     ### Translation finished
@@ -370,10 +385,10 @@ def main():
                             
                             # Removing all <p> elements within the <body> tag
                             if decomposable:
-                                for p_tag in ps_:
-                                    p_tag.decompose()
-                                for p_tag in ps:
-                                    p_tag.decompose()
+                                for p_tag in ps_ + ps:  # Combining the lists for simplicity
+                                    imgs = p_tag.find_all("img")
+                                    if not imgs:  # If there are no <img> tags, decompose the <p> tag
+                                        p_tag.decompose()
                                     
                         # Handle images
                         elif name in ["img", "image"]:
@@ -394,7 +409,7 @@ def main():
                                 cn_title = jp_title
                             else:
                                 ### Start translation
-                                cn_title = translate(jp_title, dryrun=args.dryrun)
+                                cn_title = translate(jp_title, dryrun=args.dryrun, skip_name_valid=True)
                                 ### Translation finished
                                 title_buffer[jp_title] = cn_title
                         
@@ -411,10 +426,10 @@ def main():
                             locator_.insert_before(cn_element_)
                             
                             if decomposable:
-                                for p_tag in ps:
-                                    p_tag.decompose()
-                                for p_tag in ps_:
-                                    p_tag.decompose()
+                                for p_tag in ps_ + ps:  # Combining the lists for simplicity
+                                    imgs = p_tag.find_all("img")
+                                    if not imgs:  # If there are no <img> tags, decompose the <p> tag
+                                        p_tag.decompose()
                 else:
                     # Full image page, convert all images to full page
                     for img in soup.find_all(["image", "img"]):
