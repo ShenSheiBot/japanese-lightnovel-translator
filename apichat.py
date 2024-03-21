@@ -107,15 +107,17 @@ class PoeAPIChatApp:
     def __init__(self, api_key, model_name):
         self.api_key = api_key
         self.model_name = model_name
+        self.messages = []
         
     def chat(self, message):
         return asyncio.run(self._async_chat(message))
-
+    
     async def _async_chat(self, message):
-        messages = [{"role": "user", "content": message}]
+        self.messages.append({"role": "user", "content": message})
         final_message = ""
         try:
-            async for partial in fp.get_bot_response(messages=messages, bot_name=self.model_name, api_key=self.api_key):
+            async for partial in fp.get_bot_response(messages=self.messages, bot_name=self.model_name, 
+                                                     api_key=self.api_key):
                 final_message += partial.text
         except Exception as e:
             raise APITranslationFailure(f"Poe API connection failed: {str(e)}")
@@ -165,27 +167,13 @@ if __name__ == "__main__":
     with open("translation.yaml", "r") as f:
         translation_config = yaml.load(f, Loader=yaml.FullLoader)
         
-    openai_chat = OpenAIChatApp(
-        api_key=translation_config['OpenAI-GPT-3.5-Turbo-api']['key'], 
-        model_name=translation_config['OpenAI-GPT-3.5-Turbo-api']['name'],
-        endpoint=translation_config['OpenAI-GPT-3.5-Turbo-api']['endpoint']
-    )
     google_chat = GoogleChatApp(
         api_key=translation_config['Gemini-Pro-api']['key'], 
         model_name='gemini-pro'
     )
     poe_chat = PoeAPIChatApp(
-        api_key=translation_config['Poe-api']['key'], 
-        model_name=translation_config['Poe-api']['name']
-    )
-    # baichuan_chat = BaichuanChatApp(
-    #     api_key=translation_config['Baichuan-api']['key'], 
-    #     model_name=translation_config['Baichuan-api']['name']
-    # )
-    sakura_chat = OpenAIChatApp(
-        api_key=translation_config['Sakura-OpenAI-api']['key'], 
-        model_name=translation_config['Sakura-OpenAI-api']['name'],
-        endpoint=translation_config['Sakura-OpenAI-api']['endpoint']
+        api_key=translation_config['Poe-claude-api']['key'], 
+        model_name=translation_config['Poe-claude-api']['name']
     )
 
     prompt = f"""
@@ -196,6 +184,4 @@ if __name__ == "__main__":
     """
     # print(openai_chat.chat(prompt))
     # print(google_chat.chat(prompt))
-    # print(poe_chat.chat(prompt))
-    # print(baichuan_chat.chat(prompt))
-    print(sakura_chat.chat(prompt))
+    print(poe_chat.chat(prompt))

@@ -270,6 +270,7 @@ def gemini_fix(text):
     text = text.replace("姐样", "姐姐大人")
     text = text.replace("様", "大人")
     text = text.replace("ちゃん", "酱")
+    text = text.replace("相棒", "伙伴")
     # If text immediate before and after chan is not English character
     text = re.sub(r'(?<![A-Za-z])chan(?![A-Za-z])', "酱", text)
     # same with san
@@ -362,7 +363,7 @@ def contains_tibetan_characters(check_string):
 
 
 def contains_russian_characters(check_string):
-    check_string = check_string.replace("Д", "")
+    check_string = check_string.replace("Д", "").replace("д", "")
     russian_pattern = re.compile(r'[А-яёЁ]')  # includes the range of Russian characters and the letter Ё/ё
     return bool(russian_pattern.search(check_string))
 
@@ -492,7 +493,7 @@ def validate(input, text, name_convention=None):
         if (
             "】是女性" in line
             or "】是男性" in line
-            or ("身份有" and "别名有" in line)
+            or ("身份有" in line and "别名" in line)
         ):
             logger.critical("Translation background entered content")
             return False
@@ -505,7 +506,7 @@ def validate(input, text, name_convention=None):
             for keyword in ["（", "【", "你", "您", "注", "对话", "请", "继续", "对话", "成人", "敏感", "章节", "冒犯", "翻译",
                             "Sorry", "sorry", "but", "continue", "chat", "conversation", "story", "generate", "able",
                             "violate", "violating", "violation", "story", "safety", "policies", "language", "model", 
-                            "中文", "日语", "小说", "露骨", "侵略", "准则", "规定", "性描写", "AI", "助手", "不适当", "淫秽",
+                            "中文", "日语", "小说", "露骨", "侵略", "准则", "规定", "性描写", "AI", "不适当", "淫秽",
                             "平台", "政策", "以下", "日中", "这段内容", "完成你的请求"]:
                 score += int(keyword in line)
             score += int(len(line) < 10)
@@ -941,7 +942,7 @@ def extract_ruby_from_epub(epub_path):
         'epub': 'http://www.idpf.org/2007/ops',
         'html': 'http://www.w3.org/1999/xhtml'
     }
-    
+
     # Unzip the ePub file into a temporary directory
     with zipfile.ZipFile(epub_path, 'r') as epub_zip:
         epub_zip.extractall('temp_epub')
@@ -955,33 +956,47 @@ def extract_ruby_from_epub(epub_path):
                 # Parse the XHTML file
                 tree = etree.parse(os.path.join(root, file))
                 visited_ruby = set()
-                
+
                 # Find all the <ruby> elements and extract the text
                 for ruby in tree.xpath('//html:ruby', namespaces=namespaces):
                     rb_text = ''
                     rt_text = ''
-                    
+
                     if ruby in visited_ruby:
                         continue
                     else:
                         visited_ruby = set()
-                    
+
+                    next_sibling = None
                     while ruby is not None:
                         rb = ruby.xpath('.//html:rb', namespaces=namespaces)
                         rt = ruby.xpath('.//html:rt', namespaces=namespaces)
-                        
-                        # Sometimes <rb> or <rt> might be missing, so check if they exist before trying to access text
+
+                        if next_sibling:
+                            if rb and rt:
+                                if len(rb[0].text) > 1 and len(rt[0].text) > 1:
+                                    break
+
                         rb_text += rb[0].text if rb else ''
                         rt_text += rt[0].text if rt else ''
-                        
-                        # Check if the next sibling is also a <ruby> element
-                        ruby = ruby.getnext()
                         visited_ruby.add(ruby)
-                        if ruby is None or ruby.tag != '{http://www.w3.org/1999/xhtml}ruby':
+
+                        # Check if the next sibling is also a <ruby> element
+                        tail_text_is_whitespace = not ruby.tail or ruby.tail.isspace()
+                        next_sibling = ruby.getnext()
+                        if (
+                            next_sibling is not None
+                            and next_sibling.tag == "{http://www.w3.org/1999/xhtml}ruby"
+                            and tail_text_is_whitespace
+                        ):
+                            # Update ruby to the next sibling to continue the loop
+                            ruby = next_sibling
+                        else:
+                            # If the next sibling is not a <ruby> or there is more than whitespace, break the loop
                             break
-                    
+
                     ruby_texts[rt_text] = rb_text
-    
+
     # Clean up the temporary directory
     os.system('rm -rf temp_epub')
     return ruby_texts
