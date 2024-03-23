@@ -38,6 +38,8 @@ def merge_tags(entry_name, neighbor_name, names):
 
 
 def find_aliases(names, ruby):
+    # Remove standalone names: count < 3
+    names = {name: names[name] for name in names if names[name]['count'] >= 3}
 
     # Reverse the ruby dictionary and turn key into list
     ruby_rev = {}
@@ -46,22 +48,11 @@ def find_aliases(names, ruby):
             ruby_rev[v].append(k)
         else:
             ruby_rev[v] = [k]
-
-    # Add the corresponding key in ruby to the alias list
-    to_add = {}
+    
+    # Add the ruby to the `ruby` sections
     for name in names:
         if name in ruby_rev:
-            for other_name in ruby_rev[name]:
-                if other_name not in names:
-                    # Add the name to the list of names
-                    to_add[other_name] = names[name].copy()
-                else:
-                    # Merge tags
-                    merge_tags(name, other_name, names)
-                    merge_tags(other_name, name, names)
-                            
-    for k, v in to_add.items():
-        names[k] = v
+            names[name]['ruby'] = ruby_rev[name]
 
     # Initialize aliases dictionary
     aliases = {name: set() for name in names}
@@ -81,22 +72,12 @@ def find_aliases(names, ruby):
                 continue
             if name in other_name or other_name in name or toggle_kana(name) == other_name:
                 add_aliases(name, other_name)
-
-    for name in names:
-        if name in ruby_rev:
-            for other_name in ruby_rev[name]:
-                add_aliases(name, other_name)
     
     # Sum counts and tags for each alias group
     for name in names:
         total_count = sum(names[alias]['count'] for alias in aliases[name])
         info = names[name]['info'].copy()
-        # for alias in aliases[name]:
-        #     for tag, info in names[alias]['info'].items():
-        #         if tag not in tag_counts:
-        #             tag_counts[tag] = {'tag': tag, 'count': 0}
-        #         tag_counts[tag]['count'] += info['count']
-
+        
         # Update the names dictionary with the alias information
         names[name]['alias'] = list(aliases[name])
         names[name]['count'] = total_count
@@ -106,20 +87,8 @@ def find_aliases(names, ruby):
         if '人名' in entry_data['info'] and not any(gender in entry_data['info'] for gender in ['男性', '女性']):
             visited = set([entry_name])
             neighbor_name = find_highest_count_neighbor(entry_name, names, visited)
-
-            # if neighbor_name is None:
-            #     # Search neighbors' neighbors
-            #     for alias in entry_data['alias']:
-            #         if alias in names:
-            #             neighbor_name = find_highest_count_neighbor(alias, names, visited)
-            #             if neighbor_name:
-            #                 break
-
             if neighbor_name:
                 merge_tags(entry_name, neighbor_name, names)
-
-    # Remove standalone names: count = 1 and only one alias (itself)
-    names = {name: names[name] for name in names if names[name]['count'] > 10 or len(names[name]['alias']) > 3}
     
     # Remove aliases that are not in the names list
     for name in names:

@@ -3,9 +3,9 @@ from utils import (
     SqlWrapper,
     has_kana,
     has_chinese,
-    postprocessing,
     find_example_sentences,
     contains_russian_characters,
+    toggle_kana
 )
 import yaml
 import os
@@ -20,9 +20,12 @@ with open("translation.yaml", "r", encoding="utf-8") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)    
 
 config = load_config()
+exclusions = ['彼女']
+rubies = set()
 
 with open("resource/nametranslate_prompt.txt", "r", encoding="utf-8") as f:
     prompt = f.read()
+    prompt_user, prompt_bot = prompt.split("\n---\n")
 
 
 def generate_msg(to_query, example_sentences):
@@ -45,8 +48,7 @@ def generate_msg(to_query, example_sentences):
             json_msg = json_msg[:-2] + f"，<{name}>\n"
             
     json_msg = json_msg + "}"
-    msg = prompt.replace("<json>", json_msg)
-    return msg
+    return json_msg
 
 
 def add_translated(msg, names_original, names_processed):
@@ -124,23 +126,21 @@ if __name__ == "__main__":
             while queue:
                 current = queue.pop(0)
                 for neighbor in names[current]['alias']:
-                    if neighbor not in visited:
+                    if neighbor not in visited and neighbor not in exclusions:
                         visited.add(neighbor)
                         to_query.append(neighbor)
                         queue.append(neighbor)
 
-                if len(to_query) > 15:
-                    total_names += len(to_query)
-                    msgs.append(generate_msg(to_query, example_sentences))
-                    to_query = []
-
-    total_names += len(to_query)
-    msgs.append(generate_msg(to_query, example_sentences))
+    to_querys = [to_query[i:i + 15] for i in range(0, len(to_query), 15)]
+    for to_query in to_querys:
+        msgs.append(generate_msg(to_query, example_sentences))
+        total_names += len(to_query)
 
     with SqlWrapper(os.path.join('output', config['CN_TITLE'], 'name_translate.db')) as buffer:
 
         # Remove all counts related information
         names_processed = {}
+        api_app = None
 
         for msg in msgs:
             retranslate = True
@@ -167,8 +167,19 @@ if __name__ == "__main__":
                 for name, model in translation_config.items():
                     if 'Gemini' in name:
                         api_app = GoogleChatApp(api_key=model['key'], model_name=model['name'])
-                    # elif 'Poe' in name:
-                    #     api_app = PoeAPIChatApp(api_key=model['key'], model_name=model['name'])
+                        continue
+                    elif 'Poe' in name:
+                        api_app = PoeAPIChatApp(api_key=model['key'], model_name="GPT-4")
+                        api_app.messages = [
+                            {
+                                "role": "user",
+                                "content": prompt_user
+                            },
+                            {
+                                "role": "bot",
+                                "content": prompt_bot
+                            }
+                        ]
                     else:
                         continue
 
@@ -177,7 +188,7 @@ if __name__ == "__main__":
                     while flag and retry_count > 0:
                         try:
                             logger.info(msg)
-                            response = api_app.chat(msg)
+                            response = api_app.chat(msg + "\n请用中文回答。")
                             logger.info(response)
                             result = to_json(response)
                             if type(result) is tuple:
@@ -198,10 +209,12 @@ if __name__ == "__main__":
                             buffer[original_msg] = str(response_json)
                             flag = False
                             break
-                        except Exception:
+                        except Exception as e:
+                            print(e)
                             retry_count -= 1
                             continue
 
+            names_processed_increment = {}
             for name, (_, cn_name) in zip(name_list, response_json.items()):
                 info = list(names[name]["info"].keys())
                 for tag in info:
@@ -209,12 +222,40 @@ if __name__ == "__main__":
                         info.remove(tag)
                 if not has_kana(name) and not has_chinese(name):
                     cn_name = name
-                names_processed[name] = {
+                names_processed_increment[name] = {
                     "jp_name": name,
                     "cn_name": cn_name,
                     "alias": names[name]["alias"],
                     "info": info
                 }
+                if 'ruby' in names[name]:
+                    for ruby in names[name]['ruby']:
+                        rubies.add(ruby)
+                        names_processed_increment[ruby] = {
+                            "jp_name": ruby,
+                            "cn_name": cn_name,
+                            "alias": names[name]["alias"],
+                            "info": info
+                        }
+            if api_app:
+                api_app = PoeAPIChatApp(api_key=translation_config['Poe-claude-api']['key'], model_name='GPT-4')
+                response = api_app.chat("请指出以下中日对照术语翻译中有问题的项：\n" + response + "\n请用中文回答，不要描述翻译正确的项。")
+                logger.error(response)
+            names_processed.update(names_processed_increment)
+                
+        for jp_name, cn_name in names_processed.items():
+            cn_name = cn_name['cn_name']
+            if not has_kana(jp_name) and not has_kana(cn_name) and has_chinese(jp_name) and has_chinese(cn_name):
+                if len(cn_name) != len(jp_name):
+                    logger.critical(f"Length mismatch: {jp_name} {cn_name}")
+            if toggle_kana(jp_name) in names_processed and names_processed[toggle_kana(jp_name)]['cn_name'] != cn_name:
+                if jp_name in rubies:
+                    continue
+                if toggle_kana(jp_name) in rubies:
+                    names_processed[jp_name]['cn_name'] = names_processed[toggle_kana(jp_name)]['cn_name']
+                    logger.info(f"Toggle corrected: {jp_name}: {cn_name} -> {names_processed[jp_name]['cn_name']}")
+                else:
+                    logger.critical(f"Toggle mismatch: {jp_name} {cn_name}")
 
         print(total_names)
         print(len(names_processed))
