@@ -20,7 +20,47 @@ with open("translation.yaml", "r", encoding="utf-8") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)    
 
 config = load_config()
-exclusions = ['彼女']
+exclusions = [
+    "彼女",
+    "俺",
+    "日本",
+    "パパ",
+    "王国",
+    "センセイ",
+    "地球",
+    "ヨーロッパ",
+    "フランス",
+    "姫",
+    "お父様",
+    "男",
+    "女",
+    "にぃさま",
+    "あにさま",
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
+    'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V',
+    'W', 'X', 'Y', 'Z',
+    "わたしたち",
+    "ステイツ",
+    "彼",
+    "母",
+    "ソレ",
+    "兄様",
+    "御神",
+    "トトサマ",
+    "カカサマ",
+    "ヒューマン",
+    "メイド",
+    "メイド長",
+    "お兄ちゃん",
+    "ダーリン",
+    "オトコ",
+    "アメリカ",
+    "私",
+    "中国",
+    "日本人",
+    "中国人"
+]
+# exclusions = []
 rubies = set()
 
 with open("resource/nametranslate_prompt.txt", "r", encoding="utf-8") as f:
@@ -55,16 +95,17 @@ def add_translated(msg, names_original, names_processed):
     # Use regex to find all <name>
     names = re.findall(r'<(.*?)>', msg)
     for name in names:
-        aliases = names_original[name]['alias']
-        for alias in aliases:
-            if alias != name and alias in names_processed:
-                msg = msg.replace(
-                    f"<{name}>",
-                    f"相关翻译：{names_processed[alias]['jp_name']} -> {names_processed[alias]['cn_name']}",
-                )
-                break
-        else:
-            msg = msg.replace(f"<{name}>", "")
+        if name in names_original:
+            aliases = names_original[name]['alias']
+            for alias in aliases:
+                if alias != name and alias in names_processed:
+                    msg = msg.replace(
+                        f"<{name}>",
+                        f"相关翻译：{names_processed[alias]['jp_name']} -> {names_processed[alias]['cn_name']}",
+                    )
+                    break
+            else:
+                msg = msg.replace(f"<{name}>", "")
     return msg
 
 
@@ -91,14 +132,20 @@ def to_json(s):
         else:
             cn_name = res
         cn_name = re.sub(r'(.)々', r'\1\1', cn_name)
-                    
+
         # if not has_kana(jp_name) and not has_kana(cn_name) and has_chinese(jp_name) and has_chinese(cn_name):
         #     cn_name = postprocessing(cn_name)
-        if "・" not in jp_name and ("・" in cn_name or "·" in cn_name):
+        if (
+            "・" not in jp_name
+            and "·" not in jp_name
+            and "＝" not in jp_name
+            and "=" not in jp_name
+        ) and ("・" in cn_name or "·" in cn_name):
             j[jp_name] = cn_name.replace("・", "").replace("·", "")
         # if "・" in jp_name and "・" not in cn_name and "·" not in cn_name:
         #     logger.critical(f"Missing ・: {jp_name} {cn_name}")
         #     return None, j
+        j[jp_name] = cn_name.replace("＝", "・").replace("=", "・").replace("·", "・")
     return j
 
 
@@ -118,7 +165,7 @@ if __name__ == "__main__":
     example_sentences = find_example_sentences(list(names.keys()), book)
 
     for entry in names:
-        if entry not in visited:
+        if entry not in visited and entry not in exclusions:
             visited.add(entry)
             to_query.append(entry)
             queue.append(entry)
@@ -145,6 +192,12 @@ if __name__ == "__main__":
         for msg in msgs:
             retranslate = True
             name_list = re.findall(r'<(.*?)>', msg)
+            to_del = []
+            for jp_name in name_list:
+                if jp_name not in names:
+                    to_del.append(jp_name)
+            for jp_name in to_del:
+                name_list.remove(jp_name)
 
             if msg in buffer and buffer[msg] != "[]":
                 try:
@@ -164,11 +217,11 @@ if __name__ == "__main__":
                 # response = '{' + ', '.join([f'"{name}": "翻{name}译"' for name in name_list]) + '}'
                 # response_json = to_json(response)
                 flag = True
-                for name, model in translation_config.items():
-                    if 'Gemini' in name:
+                for jp_name, model in translation_config.items():
+                    if 'Gemini' in jp_name:
                         api_app = GoogleChatApp(api_key=model['key'], model_name=model['name'])
                         continue
-                    elif 'Poe' in name:
+                    elif 'Poe' in jp_name:
                         api_app = PoeAPIChatApp(api_key=model['key'], model_name="GPT-4")
                         api_app.messages = [
                             {
@@ -214,34 +267,42 @@ if __name__ == "__main__":
                             retry_count -= 1
                             continue
 
-            names_processed_increment = {}
-            for name, (_, cn_name) in zip(name_list, response_json.items()):
-                info = list(names[name]["info"].keys())
+            for jp_name, (_, cn_name) in zip(name_list, response_json.items()):
+                info = list(names[jp_name]["info"].keys())
                 for tag in info:
                     if contains_russian_characters(tag):
                         info.remove(tag)
-                if not has_kana(name) and not has_chinese(name):
-                    cn_name = name
-                names_processed_increment[name] = {
-                    "jp_name": name,
+                if not has_kana(jp_name) and not has_chinese(jp_name):
+                    cn_name = jp_name
+                names_processed[jp_name] = {
+                    "jp_name": jp_name,
                     "cn_name": cn_name,
-                    "alias": names[name]["alias"],
+                    "alias": names[jp_name]["alias"],
                     "info": info
                 }
-                if 'ruby' in names[name]:
-                    for ruby in names[name]['ruby']:
-                        rubies.add(ruby)
-                        names_processed_increment[ruby] = {
-                            "jp_name": ruby,
-                            "cn_name": cn_name,
-                            "alias": names[name]["alias"],
-                            "info": info
-                        }
             if api_app:
                 api_app = PoeAPIChatApp(api_key=translation_config['Poe-claude-api']['key'], model_name='GPT-4')
                 response = api_app.chat("请指出以下中日对照术语翻译中有问题的项：\n" + response + "\n请用中文回答，不要描述翻译正确的项。")
                 logger.error(response)
-            names_processed.update(names_processed_increment)
+                
+        items_to_process = list(names_processed.items())
+        for jp_name, cn_name in items_to_process:
+            info = cn_name['info']
+            cn_name = cn_name['cn_name']
+            if 'ruby' in names[jp_name]:
+                for ruby in names[jp_name]['ruby']:
+                    if not has_kana(ruby) or not has_chinese(jp_name):
+                        continue
+                    rubies.add(ruby)
+                    if ruby in names_processed:
+                        logger.critical(f"Ruby conflict: {ruby} {names_processed[ruby]['cn_name']} -> {cn_name}")
+                    else:
+                        names_processed[ruby] = {
+                            "jp_name": ruby,
+                            "cn_name": cn_name,
+                            "alias": names[jp_name]["alias"],
+                            "info": info
+                        }
                 
         for jp_name, cn_name in names_processed.items():
             cn_name = cn_name['cn_name']

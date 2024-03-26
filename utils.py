@@ -271,6 +271,7 @@ def gemini_fix(text):
     text = text.replace("様", "大人")
     text = text.replace("ちゃん", "酱")
     text = text.replace("相棒", "伙伴")
+    text = text.replace("参谀", "参谋")
     # If text immediate before and after chan is not English character
     text = re.sub(r'(?<![A-Za-z])chan(?![A-Za-z])', "酱", text)
     # same with san
@@ -308,6 +309,7 @@ def postprocessing(text, verbose=True):
         text = text.replace("显着", "显著")
         text = text.replace("噼头盖脸", "劈头盖脸")
         text = text.replace("噼开", "劈开")
+    text = text.replace("参谀", "参谋")
     
     lines = text.split("\n")
     filtered_lines = []
@@ -465,7 +467,7 @@ def convert_san(text, name_convention):
     text = re.sub(r"(.{1,5})先生", replace_sama, text)
     text = re.sub(r"(.{1,5})小姐", replace_sama, text)
 
-    return text.replace("さん", "桑").replace("san", "桑")
+    return text.replace("さん", "").replace("san", "")
 
 
 ## Check if the translation is valid
@@ -480,9 +482,9 @@ def validate(input, text, name_convention=None):
             logger.critical("Too few new lines.")
             return False
 
-    if contains_russian_characters(text):
-        logger.critical("Russian characters detected.")
-        return False
+    # if contains_russian_characters(text):
+    #     logger.critical("Russian characters detected.")
+    #     return False
     # if contains_arabic_characters(text):
     #     logger.critical("Arabic characters detected.")
     #     return False
@@ -503,7 +505,7 @@ def validate(input, text, name_convention=None):
         or "pologize" in line or "language model" in line or "able" in line or "性描写" in line \
         or "AU" in line or "policy" in line:
             score = 0
-            for keyword in ["（", "【", "你", "您", "注", "对话", "请", "继续", "对话", "成人", "敏感", "章节", "冒犯", "翻译",
+            for keyword in ["（", "【", "你", "您", "注", "请", "继续", "成人", "敏感", "章节", "冒犯", "翻译",
                             "Sorry", "sorry", "but", "continue", "chat", "conversation", "story", "generate", "able",
                             "violate", "violating", "violation", "story", "safety", "policies", "language", "model", 
                             "中文", "日语", "小说", "露骨", "侵略", "准则", "规定", "性描写", "AI", "不适当", "淫秽",

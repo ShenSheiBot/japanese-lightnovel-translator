@@ -84,10 +84,17 @@ def find_aliases(names, ruby):
         names[name]['info'] = info
         
     for entry_name, entry_data in names.items():
-        if '人名' in entry_data['info'] and not any(gender in entry_data['info'] for gender in ['男性', '女性']):
+        if '人名' in entry_data['info']:
             visited = set([entry_name])
             neighbor_name = find_highest_count_neighbor(entry_name, names, visited)
-            if neighbor_name:
+            
+            def get_gender(name):
+                if '男性' in names[name]['info']:
+                    return '男性'
+                if '女性' in names[name]['info']:
+                    return '女性'
+                return None
+            if neighbor_name and get_gender(entry_name) == get_gender(neighbor_name):
                 merge_tags(entry_name, neighbor_name, names)
     
     # Remove aliases that are not in the names list

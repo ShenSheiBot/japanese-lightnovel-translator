@@ -23,6 +23,13 @@ warnings.filterwarnings('ignore', category=UserWarning)
 with open("translation.yaml", "r") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)
 webapp = None
+config = load_config()
+name_convention[config['JP_TITLE']] = {
+    'jp_name': config['JP_TITLE'],
+    'cn_name': config['CN_TITLE'],
+    'alias': [config['JP_TITLE']],
+    'info': ["标题"]
+}
 
 
 def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False):       
@@ -83,7 +90,7 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False):
                             if violate_count < min_violate_count:
                                 min_violate_count = violate_count
                                 cn_text_bck = deepcopy(cn_text)
-                        if name_violation_count > 3:
+                        if name_violation_count >= 3:
                             cn_text = cn_text_bck
                             logger.critical(f"-------- {ruuid} Fallback to min violate translation.")
                             flag = False
@@ -159,7 +166,6 @@ def post_translate(cn_text):
 
 
 def main():
-    config = load_config()
     logger.add(f"output/{config['CN_TITLE']}/info.log", colorize=True, level="DEBUG")
     parser = argparse.ArgumentParser()
     parser.add_argument("--dryrun", action="store_true")
@@ -174,11 +180,11 @@ def main():
 
     with SqlWrapper(f"output/{config['CN_TITLE']}/buffer.db") as buffer, \
          SqlWrapper(f"output/{config['CN_TITLE']}/title_buffer.db") as title_buffer:
-             
+
         # Iterate through each item in the book (chapters, sections, etc.)
         if config['JP_TITLE'] not in title_buffer:
             title_buffer[config['JP_TITLE']] = config['CN_TITLE']
-        
+
         ############ Translate the chapter titles ############
         ncx = book.get_item_with_id("ncx")
         content = ncx.content.decode("utf-8")
@@ -191,7 +197,7 @@ def main():
             output += str(i) + " " + name + "\n"
             jp_titles.append(name)
         jp_titles_parts = split_string_by_length(output, 800)
-        
+
         # Traverse the aggregated chapter titles
         for jp_text in jp_titles_parts:
             jp_titles_ = jp_text.strip().split('\n')
@@ -203,14 +209,14 @@ def main():
                 else:
                     new_jp_titles[-1] += jp_title
             jp_titles_ = new_jp_titles
-            
+
             start_idx = get_leading_numbers(jp_titles_[0])
             end_idx = get_leading_numbers(jp_titles_[-1])
-            
+
             if not all([remove_leading_numbers(title) in title_buffer for title in jp_titles_]):
                 cn_titles_ = []
                 title_retry_count = config['TRANSLATION_TITLE_RETRY_COUNT'] + 1
-                
+
                 while len(cn_titles_) != len(jp_titles_) and title_retry_count > 0:
                     ### Start translation
                     if (not has_kana(jp_text) and not has_chinese(jp_text)) or args.dryrun:
@@ -221,7 +227,7 @@ def main():
                         cn_text = translate(jp_text, mode="title_translation", dryrun=args.dryrun, skip_name_valid=True)
                         title_buffer[jp_text] = cn_text
                     ### Translation finished
-                    
+
                     ### Match translated title to the corresponding indices
                     cn_titles_ = cn_text.strip().split('\n')
                     cn_titles_ = [title for title in cn_titles_ if get_leading_numbers(title) is not None]
@@ -233,11 +239,11 @@ def main():
                         break
                     else:
                         title_retry_count -= 1
-                
+
                 if len(cn_titles_) != len(jp_titles_):
                     logger.error("Title translation failed.")
                     cn_titles_ = jp_titles_
-                
+
                 if not args.dryrun:
                     for cn_title, jp_title in zip(cn_titles_, jp_titles_):
                         if not has_kana(jp_title) and not has_chinese(jp_title):
@@ -246,7 +252,7 @@ def main():
 
         replace_section_titles(cn_book.toc, title_buffer)
         replace_section_titles(modified_book.toc, title_buffer, cnjp=True)
-        
+
         total_items = 0
         for item in tqdm(list(book.get_items())):
             if isinstance(item, epub.EpubHtml) and not isinstance(item, epub.EpubNav) \
@@ -254,10 +260,10 @@ def main():
                 total_items += 1
         current_items = 0
         current_time = None
-    
+
         ############ Translate the chapters and TOCs ############
         for item in list(book.get_items()):
-            
+
             if isinstance(item, epub.EpubHtml) and not isinstance(item, epub.EpubNav) \
             and "TOC" not in item.id and "toc" not in item.id:
                 current_items += 1
@@ -268,12 +274,12 @@ def main():
                     remaining_time = elapsed_time * (total_items - current_items)
                     logger.info(f"Estimated remaining time: {remaining_time / 60:.2f} minutes")
                 current_time = time.time()
-                
+
                 content = item.content.decode("utf-8")
                 # Parse HTML and extract text
                 soup = BeautifulSoup(item.content.decode("utf-8"), "html5lib")
                 cn_soup = BeautifulSoup(item.content.decode("utf-8"), "html5lib")
-                
+
                 # for rt_tag in soup.find_all("rt"):
                 #     rt_tag.decompose()
                 # for rt_tag in cn_soup.find_all("rt"):
@@ -284,7 +290,7 @@ def main():
                     for soup_ in [soup, cn_soup]:
                         intro_div = soup_.find('span', string='简介：')
                         if intro_div:
-                            intro_div.find_next_sibling('div')
+                            intro_div = intro_div.find_next_sibling('div')
                         else:
                             continue
 
@@ -297,18 +303,18 @@ def main():
                             # Update the div's content
                             intro_div.clear()
                             intro_div.append(BeautifulSoup(new_content, 'html.parser'))  
-                
+
                 if soup.body.find(["p", "h1", "h2", "h3"]):
                     # Extract paragraphs and join them with new lines
                     paragraphs = soup.find_all(["p", "h1", "h2", "h3", "img", "image"])
                     paragraphs_ = cn_soup.find_all(["p", "h1", "h2", "h3", "img", "image"])
-                    
+
                     # Get consecutive paragraphs and titles
                     jp_text_collection = []
                     last_p = False
-                    
+
                     img_sets = []
-                    
+
                     for p_tag, p_tag_ in zip(paragraphs, paragraphs_):
                         if p_tag.name in ["img", "image"]:
                             img_sets.append((p_tag, p_tag_))
@@ -323,24 +329,31 @@ def main():
                         else:
                             jp_text_collection.append((p_tag.get_text(), p_tag.name, [p_tag], [p_tag_]))
                             last_p = True
-                            
+
                     for jp_texts, name, ps, ps_ in jp_text_collection:
                         locator = ps[0]
                         locator_ = ps_[0]
-                            
+
                         # Handle paragraph
                         if name == "p":
                             # Modify chapter_text using change function
                             jp_text_parts = split_string_by_length(jp_texts)
-                            
+
                             decomposable = len(jp_text_parts) > 0
                             for jp_text in jp_text_parts:
-                                
+
                                 # Remove images
                                 img_pattern = re.compile(r'<img[^>]+>')
                                 imgs = img_pattern.findall(jp_text)
                                 jp_text = img_pattern.sub('', jp_text)
                                 jp_text = concat_kanji_rubi(jp_text)
+
+                                # Remove first line if contain title and 作
+                                first_line = jp_text.strip().split("\n")[0].strip()
+                                if "作" in first_line and re.sub(
+                                    r"\s", "", config["JP_TITLE"]
+                                ) in re.sub(r"\s", "", first_line):
+                                    jp_text = jp_text.replace(first_line + '\n', '')
 
                                 if len(jp_text.strip()) == 0:
                                     cn_text = ""
@@ -356,25 +369,25 @@ def main():
                                     cn_text = gemini_fix(cn_text)
                                     cn_text = post_translate(cn_text)
                                     ### Translation finished
-                                    
+
                                     cn_text = remove_duplicate(cn_text)
                                     if not args.dryrun:
                                         buffer[jp_text] = cn_text
-                                
+
                                 cn_text = postprocessing(cn_text, verbose=not args.dryrun)
                                 jp_text = txt_to_html(jp_text)
                                 cn_text = txt_to_html(cn_text)
 
                                 jp_element = BeautifulSoup(jp_text, "html5lib").find()
                                 cn_element = BeautifulSoup(cn_text, "html5lib").find()
-                                
+
                                 locator.insert_before(jp_element)
                                 if decomposable:
                                     locator.insert_before(sep())
                                 locator.insert_before(cn_element)
                                 if decomposable:
                                     locator.insert_before(sep())
-                                
+
                                 cn_element_ = BeautifulSoup(cn_text, "html5lib").find()
                                 locator_.insert_before(cn_element_)
 
@@ -382,23 +395,23 @@ def main():
                                     img = BeautifulSoup(img, "html5lib")
                                     cn_element.insert_before(img)
                                     cn_element_.insert_before(img)
-                            
+
                             # Removing all <p> elements within the <body> tag
                             if decomposable:
                                 for p_tag in ps_ + ps:  # Combining the lists for simplicity
                                     imgs = p_tag.find_all("img")
                                     if not imgs:  # If there are no <img> tags, decompose the <p> tag
                                         p_tag.decompose()
-                                    
+
                         # Handle images
                         elif name in ["img", "image"]:
                             # Do nothing
                             pass
-                                    
+
                         # Handle titles
                         else:
                             decomposable = True
-                            
+
                             jp_title = jp_texts
                             if len(jp_title.strip()) == 0:
                                 cn_title = ""
@@ -412,19 +425,19 @@ def main():
                                 cn_title = translate(jp_title, dryrun=args.dryrun, skip_name_valid=True)
                                 ### Translation finished
                                 title_buffer[jp_title] = cn_title
-                        
+
                             jp_title = txt_to_html(jp_title, tag=name)
                             cn_title = txt_to_html(cn_title, tag=name)
-                            
+
                             jp_element = BeautifulSoup(jp_title, "html5lib").find()
                             cn_element = BeautifulSoup(cn_title, "html5lib").find()
                             locator.insert_before(jp_element)
                             locator.insert_before(BeautifulSoup("<br/>", "html5lib").find())
                             locator.insert_before(cn_element)
-                            
+
                             cn_element_ = BeautifulSoup(cn_title, "html5lib").find()
                             locator_.insert_before(cn_element_)
-                            
+
                             if decomposable:
                                 for p_tag in ps_ + ps:  # Combining the lists for simplicity
                                     imgs = p_tag.find_all("img")
@@ -444,14 +457,14 @@ def main():
                             height = img.attrs["height"]
                             img.attrs["width"] = "600"
                             img.attrs["height"] = str(int(600 * int(height) / int(width)))
-                    
+
                 update_content(item, modified_book, title_buffer, soup)
                 update_content(item, cn_book, title_buffer, cn_soup)
-                
+
             ### Handle TOC and Ncx updates
             elif isinstance(item, epub.EpubNcx) or \
             (isinstance(item, epub.EpubHtml) and ("TOC" in item.id or "toc" in item.id)):
-                    
+
                 # Update titles to CN titles or CN+JP titles in TOC
                 content = item.content.decode("utf-8")
                 cn_content = deepcopy(content)
@@ -461,18 +474,18 @@ def main():
                         cn_title = title_buffer[jp_title]
                         content = content.replace(jp_title, cn_title)
                         cn_content = cn_content.replace(jp_title, cn_title)
-                
+
                 update_content(item, modified_book, title_buffer, content)
                 update_content(item, cn_book, title_buffer, cn_content)
-            
+
             else:
                 # Copy other items
                 modified_book.items.append(item)
                 cn_book.items.append(item)
-    
+
     # Save EPUB output
     namespace = 'http://purl.org/dc/elements/1.1/'
-    
+
     cn_book.metadata[namespace]['language'] = []
     cn_book.set_language("zh")
     cn_book.metadata[namespace]['title'] = []
@@ -481,7 +494,7 @@ def main():
     modified_book.set_language("zh")
     modified_book.metadata[namespace]['title'] = []
     modified_book.set_title(config['CN_TITLE'])
-    
+
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cnjp.epub", modified_book)
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cn.epub", cn_book)
     zip_folder_7z(

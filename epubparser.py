@@ -8,6 +8,7 @@ import re
 
 def main(book_name):
     result = []
+    config = load_config()
     
     # Open the EPUB file
     book = epub.read_epub(book_name, {"ignore_ncx": False})
@@ -49,6 +50,13 @@ def main(book_name):
                             img_pattern = re.compile(r'<img[^>]+>')
                             jp_text = img_pattern.sub('', jp_text)
                             jp_text = concat_kanji_rubi(jp_text)
+                            
+                            # Remove first line if contain title and 作
+                            first_line = jp_text.strip().split("\n")[0].strip()
+                            if "作" in first_line and re.sub(
+                                r"\s", "", config["JP_TITLE"]
+                            ) in re.sub(r"\s", "", first_line):
+                                jp_text = jp_text.replace(first_line + '\n', '')
 
                             if len(jp_text.strip()) != 0:
                                 ### Start translation
