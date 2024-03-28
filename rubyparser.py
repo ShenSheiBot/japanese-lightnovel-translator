@@ -58,7 +58,7 @@ if __name__ == "__main__":
     if not len(multi_rubi) == 0:
         with open('resource/rubi_prompt.txt', 'r', encoding='utf-8') as f:
             ruby_prompt = f.read()
-            
+
         multi_rubies = partition_json(json.dumps(multi_rubi, ensure_ascii=False), 2000)
         for multi_rubi in multi_rubies:
             prompt = ruby_prompt + multi_rubi
@@ -79,9 +79,17 @@ if __name__ == "__main__":
                 except Exception as e:
                     print(e)
                     continue
-        
+
     dictionary.update(rubi)            
     logger.info(dictionary)
+    
+    # Load exclusions from resource/exclusions.txt
+    with open('resource/exclusions.txt', 'r', encoding='utf-8') as f:
+        exclusions = f.read().splitlines()
+    
+    for exclusion in exclusions:
+        if exclusion in dictionary:
+            del dictionary[exclusion]
     # Dump the final dictionary to CN_TITLE/names.json
     with open(os.path.join('output', config['CN_TITLE'], 'ruby.json'), 'w', encoding='utf-8') as f:
         json.dump(dictionary, f, ensure_ascii=False, indent=4)

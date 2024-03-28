@@ -20,46 +20,9 @@ with open("translation.yaml", "r", encoding="utf-8") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)    
 
 config = load_config()
-exclusions = [
-    "彼女",
-    "俺",
-    "日本",
-    "パパ",
-    "王国",
-    "センセイ",
-    "地球",
-    "ヨーロッパ",
-    "フランス",
-    "姫",
-    "お父様",
-    "男",
-    "女",
-    "にぃさま",
-    "あにさま",
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
-    'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V',
-    'W', 'X', 'Y', 'Z',
-    "わたしたち",
-    "ステイツ",
-    "彼",
-    "母",
-    "ソレ",
-    "兄様",
-    "御神",
-    "トトサマ",
-    "カカサマ",
-    "ヒューマン",
-    "メイド",
-    "メイド長",
-    "お兄ちゃん",
-    "ダーリン",
-    "オトコ",
-    "アメリカ",
-    "私",
-    "中国",
-    "日本人",
-    "中国人"
-]
+with open('resource/exclusions.txt', 'r', encoding='utf-8') as f:
+    exclusions = f.read().splitlines()
+
 # exclusions = []
 rubies = set()
 

@@ -182,8 +182,7 @@ def main():
          SqlWrapper(f"output/{config['CN_TITLE']}/title_buffer.db") as title_buffer:
 
         # Iterate through each item in the book (chapters, sections, etc.)
-        if config['JP_TITLE'] not in title_buffer:
-            title_buffer[config['JP_TITLE']] = config['CN_TITLE']
+        title_buffer[config['JP_TITLE']] = config['CN_TITLE']
 
         ############ Translate the chapter titles ############
         ncx = book.get_item_with_id("ncx")
