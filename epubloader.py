@@ -140,6 +140,9 @@ def post_translate(cn_text):
             while count < COUNT and ("翻译" in response or "抱歉" in response or has_kana(response) 
                                      or not has_chinese(response) or len(response) / len(line) < 0.5 
                                      or len(response) / len(line) > 1.5):
+                if 'Poe-claude-api' not in translation_config:
+                    logger.critical("Poe API is not available. Returning the original text.")
+                    return cn_text
                 try:
                     poe_chat = PoeAPIChatApp(api_key=translation_config['Poe-claude-api']['key'],
                                              model_name=translation_config['Poe-claude-api']['name'])

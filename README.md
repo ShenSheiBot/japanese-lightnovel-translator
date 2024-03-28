@@ -36,7 +36,7 @@ JP_TITLE=[Japanese Book Name]
 TRANSLATION_TITLE_RETRY_COUNT=[Retry Count for Batch Translation of EPUB Titles]
 ```
 
-1. 将文件 `translation.yaml.example` 重命名为 `translation.yaml` 并且填入你的 [Gemini API keys](https://aistudio.google.com/app/u/0/apikey?pli=1) 与 [Poe API keys](https://poe.com/api_key)。Gemini API免费。如果没有Poe API key，可以删去相关翻译配置。在靠上的翻译配置会优先使用，失败后会尝试使用靠下的翻译配置。全部失败后会回落到原文。如果没有在本机部署SakuraLLM或使用Sakura公用API，也可以删去Sakura的翻译配置。
+3. 将文件 `translation.yaml.example` 重命名为 `translation.yaml` 并且填入你的 [Gemini API keys](https://aistudio.google.com/app/u/0/apikey?pli=1) 与 [Poe API keys](https://poe.com/api_key)。Gemini API免费。如果没有Poe API key，可以删去相关翻译配置。在靠上的翻译配置会优先使用，失败后会尝试使用靠下的翻译配置。全部失败后会回落到原文。如果没有在本机部署SakuraLLM或使用Sakura公用API，也可以删去Sakura的翻译配置。
 
 ```yaml
 {
@@ -55,7 +55,7 @@ TRANSLATION_TITLE_RETRY_COUNT=[Retry Count for Batch Translation of EPUB Titles]
 }
 ```
 
-4. （可选）添加人名的术语表。将文件 `names.yaml` 放入`output/[Chinese Book Name]/` 目录下。示范格式如下：
+4.（可选）添加人名的术语表。将文件 `names.yaml` 放入`output/[Chinese Book Name]/` 目录下。示范格式如下：
 ```yaml
 {
     "オノレ": "奥诺雷",
@@ -64,13 +64,42 @@ TRANSLATION_TITLE_RETRY_COUNT=[Retry Count for Batch Translation of EPUB Titles]
     "キメラ": "奇美拉",
 }
 ```
-可使用`XLM-RoBERTa.ipynb`自动生成术语表。
+也可添加更详细的角色别名/信息，避免GPT翻译的性别错误：
+```yaml
+{
+    "オノレ": {
+        "jp_name": "オノレ"
+        "cn_name": "奥诺雷"
+        "alias": [
+            "勇者"
+        ],
+        "info": [
+            "男性",
+            "勇者",
+            "少年"
+        ]
+    }
+}
+```
+
+可使用以下的步骤生成翻译术语表 (需求Poe会员)：
+
+- `poetry run python nameparser.py` 分析epub并记录出现的术语、出现次数、性别等信息
+- `poetry run python rubyparser.py` 分析epub出现的汉字注音，作为寻找假名和汉字关系的辅助
+- `poetry run python nameaggregator.py` 将分析结果整合为`names_raw.json`
+- `poetry run python nametranslate.py` 根据术语和例句，使用GPT-4翻译术语。翻译后会自动使用GPT-4评价可能存在问题的翻译结果。
 
 5. 执行以下命令以启动翻译过程：
 
+```bash
+poetry run python epubloader.py  # Sequentially translate the content
+```
+
+或者使用多进程启动翻译（需求Poe会员，无并发数限制）：
 
 ```bash
-poetry run python epubloader.py  # For EPUB files
+poetry run python batchtranslate.py  # Batch translate the content
+poetry run python epubloader.py  # Make ebook
 ```
 
 翻译过程可以暂停和恢复。如果中断，只需重新运行命令即可继续。翻译完成后，译本将以中文和双语（日语+中文）两种格式出现在  `output/[Chinese Book Name]/` 目录中。
