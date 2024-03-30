@@ -282,10 +282,14 @@ def main():
                 soup = BeautifulSoup(item.content.decode("utf-8"), "html5lib")
                 cn_soup = BeautifulSoup(item.content.decode("utf-8"), "html5lib")
 
-                # for rt_tag in soup.find_all("rt"):
-                #     rt_tag.decompose()
-                # for rt_tag in cn_soup.find_all("rt"):
-                #     rt_tag.decompose()
+                for rt_tag in soup.find_all("rp"):
+                    rt_tag.decompose()
+                for rt_tag in cn_soup.find_all("rp"):
+                    rt_tag.decompose()
+                for rt_tag in soup.find_all("rt"):
+                    rt_tag.decompose()
+                for rt_tag in cn_soup.find_all("rt"):
+                    rt_tag.decompose()
 
                 if item.id == "message.xhtml":
                     # Find the div that comes after the <span>简介：</span>

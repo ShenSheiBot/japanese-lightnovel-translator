@@ -20,6 +20,10 @@ def main(book_name):
         and "TOC" not in item.id and "toc" not in item.id:
             # Parse HTML and extract text
             soup = BeautifulSoup(item.content.decode("utf-8"), "html5lib")
+            for rt_tag in soup.find_all("rp"):
+                rt_tag.decompose()
+            for rt_tag in soup.find_all("rt"):
+                rt_tag.decompose()
             
             if soup.body.find(["p", "h1", "h2", "h3"]):
                 # Extract paragraphs and join them with new lines
