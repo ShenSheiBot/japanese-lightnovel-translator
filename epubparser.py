@@ -7,7 +7,10 @@ import re
 
 
 def main(book_name, chapterwise=False):
-    result = {}
+    if chapterwise:
+        result = {}
+    else:
+        result = []
     config = load_config()
     
     # Open the EPUB file
