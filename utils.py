@@ -295,9 +295,11 @@ def postprocessing(text, verbose=True):
     text = replace_goro(text)
     text = replace_uoraaa(text)
     text = fix_repeated_chars(text)
+    from prompt import name_convention
+    text = convert_san(text, name_convention=name_convention)
     
     if contains_trad_chars(text):
-        text = HanziConv.toSimplified(text)
+        text = convert_jp_char(text)
         text = text.replace("唿", "呼")
         text = text.replace("熘", "溜")
         text = text.replace("勐", "猛")
@@ -394,15 +396,8 @@ def get_appeared_names(text, name_convention=None):
     for jp_name in name_convention.keys():
         if jp_name in text:
             appeared_names[jp_name] = name_convention[jp_name]
+            text = text.replace(jp_name, "")
             
-    to_del = []
-    for name in appeared_names:
-        for name_ in appeared_names:
-            if name in name_ and name != name_:
-                to_del.append(name)
-    for name in to_del:
-        if name in appeared_names:
-            del appeared_names[name]
     return appeared_names
 
 
@@ -481,6 +476,24 @@ def validate(input, text, name_convention=None):
         if text_new_line_count / input_new_line_count < 0.5:
             logger.critical("Too few new lines.")
             return False
+        
+    text = postprocessing(text, verbose=False)
+    text_bracket_count = text.count("【") + 1
+    input_bracket_count = input.count("【") + input.count("[") + 1
+    if text_bracket_count / input_bracket_count > 5:
+        logger.critical(f"Too many brackets: {text_bracket_count}/{input_bracket_count}")
+        logger.critical(text)
+        return False
+    
+    # text_new_line_count = len([line for line in text.split('\n') if line.strip() != ''])
+    # input_new_line_count = len([line for line in input.split('\n') if line.strip() != ''])
+    # if input_new_line_count == 1:
+    #     if text_new_line_count > 2:
+    #         logger.critical("Too many new lines.")
+    #         return False
+    #     if "翻译" in text and "版权" in text:
+    #         logger.critical("Invalid title translation.")
+    #         return False
 
     # if contains_russian_characters(text):
     #     logger.critical("Russian characters detected.")
@@ -505,11 +518,11 @@ def validate(input, text, name_convention=None):
         or "pologize" in line or "language model" in line or "able" in line or "性描写" in line \
         or "AU" in line or "policy" in line:
             score = 0
-            for keyword in ["（", "【", "你", "您", "注", "请", "继续", "成人", "敏感", "章节", "冒犯", "翻译",
+            for keyword in ["（", "【", "注", "成人", "敏感", "章节", "冒犯", "翻译",
                             "Sorry", "sorry", "but", "continue", "chat", "conversation", "story", "generate", "able",
                             "violate", "violating", "violation", "story", "safety", "policies", "language", "model", 
                             "中文", "日语", "小说", "露骨", "侵略", "准则", "规定", "性描写", "AI", "不适当", "淫秽",
-                            "平台", "政策", "以下", "日中", "这段内容", "完成你的请求"]:
+                            "平台", "政策", "以下", "日中", "这段内容", "完成你的请求", "版权", "原文", "尽量"]:
                 score += int(keyword in line)
             score += int(len(line) < 10)
             if score >= 3:
@@ -519,7 +532,7 @@ def validate(input, text, name_convention=None):
         logger.critical("No translation provided.")
         return False
     info_ratio = len(input) / len(text)
-    if info_ratio > 2:
+    if len(input) > 50 and info_ratio > 3:
         logger.critical("Translation too short: " + str(len(input)) + "/" + str(len(text)))
         return False
     # Remove all special chars
@@ -954,7 +967,7 @@ def extract_ruby_from_epub(epub_path):
     # Walk through the temporary directory
     for root, _, files in os.walk('temp_epub'):
         for file in files:
-            if file.endswith('.xhtml'):
+            if file.endswith('html'):
                 # Parse the XHTML file
                 tree = etree.parse(os.path.join(root, file))
                 visited_ruby = set()

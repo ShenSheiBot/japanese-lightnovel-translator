@@ -5,7 +5,10 @@ import yaml
 from loguru import logger
 import json
 from p_tqdm import p_map
-from epubloader import translate, post_translate
+from epubloader import translate
+from argparse import ArgumentParser
+from typing import List
+from prompt import generate_prompt
 
 
 class KeyboardInterruptError(Exception):
@@ -22,6 +25,7 @@ config = load_config()
 logger.remove()
 logger.add(f"output/{config['CN_TITLE']}/info.log", colorize=True, level="DEBUG")
 buffer = SqlWrapper(os.path.join('output', config['CN_TITLE'], 'buffer.db'))
+update_buffer = SqlWrapper(os.path.join('output', config['CN_TITLE'], 'update_buffer.db'))
 
 
 def to_json(s):
@@ -45,23 +49,37 @@ def to_json(s):
     return j
 
 
-def translate_wrapper(content: str):
+def translate_wrapper(content: str, context: List[dict] = None) -> str:
     # Already translated
     if (
         content in buffer
     ):
         return
-    cn_text = translate(content)
+    cn_text = translate(content, context=context)
     cn_text = gemini_fix(cn_text)
-    # cn_text = post_translate(cn_text)
     buffer[content] = cn_text
+    return cn_text
+
+
+def chapterwise_translate_wrapper(contents: List[str]):
+    # Already translated
+    context = None
+    for content in contents:
+        cn_text = translate_wrapper(content, context=context)
+        context = [
+            {"role": "user", "content": generate_prompt(content, mode="sakura")},
+            {"role": "bot", "content": cn_text},
+        ]
 
 
 if __name__ == "__main__":
-    book_contents = main(os.path.join('output', config['CN_TITLE'], 'input.epub'))
-    try:
-        p_map(translate_wrapper, book_contents, num_cpus=8)
-    except KeyboardInterrupt:
-        print("KeyboardInterrupt caught, terminating processes...")
-        buffer.close()
-        raise KeyboardInterruptError()
+    # Option chapterwise
+    parser = ArgumentParser()
+    parser.add_argument("--chapterwise", action="store_true")
+    if parser.parse_args().chapterwise:
+        book_contents = main(os.path.join('output', config['CN_TITLE'], 'input.epub'), chapterwise=True)
+        book_contents = list(book_contents.values())
+        p_map(chapterwise_translate_wrapper, book_contents, num_cpus=config['NUM_PROCS'])
+    else:
+        book_contents = main(os.path.join('output', config['CN_TITLE'], 'input.epub'))
+        p_map(translate_wrapper, book_contents, num_cpus=config['NUM_PROCS'])

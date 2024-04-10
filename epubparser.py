@@ -6,8 +6,8 @@ from utils import split_string_by_length, load_config, concat_kanji_rubi
 import re
 
 
-def main(book_name):
-    result = []
+def main(book_name, chapterwise=False):
+    result = {}
     config = load_config()
     
     # Open the EPUB file
@@ -18,6 +18,10 @@ def main(book_name):
         
         if isinstance(item, epub.EpubHtml) and not isinstance(item, epub.EpubNav) \
         and "TOC" not in item.id and "toc" not in item.id:
+            
+            if chapterwise:
+                result[item.id] = []
+            
             # Parse HTML and extract text
             soup = BeautifulSoup(item.content.decode("utf-8"), "html5lib")
             for rt_tag in soup.find_all("rp"):
@@ -64,8 +68,15 @@ def main(book_name):
 
                             if len(jp_text.strip()) != 0:
                                 ### Start translation
-                                result.append(jp_text)
+                                if chapterwise:
+                                    result[item.id].append(jp_text)
+                                else:
+                                    result.append(jp_text)
                                 ### Translation finished
+                                
+            if chapterwise:
+                if not result[item.id]:
+                    del result[item.id]
 
     return result
         

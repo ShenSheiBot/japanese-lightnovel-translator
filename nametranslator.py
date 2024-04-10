@@ -88,6 +88,7 @@ def to_json(s):
         logger.critical(f"Unparsable: {s}")
         return None
     for jp_name, cn_name in j.items():
+        cn_name = cn_name.replace("ちゃん", "酱")
         res = re.sub(r'[\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF]', '之', cn_name)
         if res.count("之") > 1:
             logger.critical(f"Too many Kana: {jp_name} {cn_name}")

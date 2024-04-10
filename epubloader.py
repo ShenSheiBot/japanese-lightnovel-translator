@@ -16,6 +16,8 @@ import warnings
 import yaml
 import time
 import uuid
+import random
+import string
 
 
 warnings.filterwarnings('ignore', category=XMLParsedAsHTMLWarning)
@@ -32,7 +34,7 @@ name_convention[config['JP_TITLE']] = {
 }
 
 
-def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False):       
+def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, context=None):       
     flag = True
     
     jp_text = fix_repeated_chars(jp_text)
@@ -69,6 +71,9 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False):
                 api_app = BaichuanChatApp(api_key=model['key'], model_name=model['name'])
             else:
                 raise ValueError("Invalid model name.")
+            
+            if context:
+                api_app.messages = context
             
             name_violation_count = 0
             min_violate_count = 10000
@@ -223,7 +228,7 @@ def main():
                     ### Start translation
                     if (not has_kana(jp_text) and not has_chinese(jp_text)) or args.dryrun:
                         cn_text = jp_text
-                    elif jp_text in title_buffer:
+                    elif jp_text in title_buffer and validate(jp_text, title_buffer[jp_text], name_convention):
                         cn_text = title_buffer[jp_text]
                     else:
                         cn_text = translate(jp_text, mode="title_translation", dryrun=args.dryrun, skip_name_valid=True)
@@ -231,13 +236,14 @@ def main():
                     ### Translation finished
 
                     ### Match translated title to the corresponding indices
+                    cn_text = postprocessing(cn_text)
                     cn_titles_ = cn_text.strip().split('\n')
                     cn_titles_ = [title for title in cn_titles_ if get_leading_numbers(title) is not None]
                     if len(cn_titles_) == 0:
                         continue
                     if get_leading_numbers(cn_titles_[0]) == start_idx and \
                         get_leading_numbers(cn_titles_[-1]) == end_idx and \
-                            len(cn_titles_) == len(jp_titles_):
+                            len(cn_titles_) == len(jp_titles_) and validate(jp_text, cn_text, name_convention):
                         break
                     else:
                         title_retry_count -= 1
@@ -422,7 +428,7 @@ def main():
                             if len(jp_title.strip()) == 0:
                                 cn_title = ""
                                 decomposable = False
-                            elif jp_title in title_buffer:
+                            elif jp_title in title_buffer and validate(jp_title, title_buffer[jp_title], None):
                                 cn_title = title_buffer[jp_title]
                             elif not has_kana(jp_title) or "作者" in jp_title:
                                 cn_title = jp_title
@@ -432,6 +438,7 @@ def main():
                                 ### Translation finished
                                 title_buffer[jp_title] = cn_title
 
+                            cn_title = postprocessing(cn_title)
                             jp_title = txt_to_html(jp_title, tag=name)
                             cn_title = txt_to_html(cn_title, tag=name)
 
@@ -503,10 +510,11 @@ def main():
 
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cnjp.epub", modified_book)
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cn.epub", cn_book)
+    password = ''.join(random.choices(string.digits + string.ascii_letters, k=6))
     zip_folder_7z(
         f"output/{config['CN_TITLE']}/", 
-        f"output/{config['CN_TITLE']}/{config['CN_TITLE']}【密码为前10字】.7z",
-        password=config['CN_TITLE'][:10]
+        f"output/{config['CN_TITLE']}/{config['CN_TITLE']}【密码：{password}】.7z",
+        password=password
     )
 
 
