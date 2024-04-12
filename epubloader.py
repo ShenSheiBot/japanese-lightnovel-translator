@@ -206,6 +206,9 @@ def main():
         jp_titles_parts = split_string_by_length(output, 800)
 
         # Traverse the aggregated chapter titles
+        prev_jp_text = None
+        prev_cn_text = None
+
         for jp_text in jp_titles_parts:
             jp_titles_ = jp_text.strip().split('\n')
             new_jp_titles = []
@@ -231,7 +234,20 @@ def main():
                     elif jp_text in title_buffer and validate(jp_text, title_buffer[jp_text], name_convention):
                         cn_text = title_buffer[jp_text]
                     else:
-                        cn_text = translate(jp_text, mode="title_translation", dryrun=args.dryrun, skip_name_valid=True)
+                        if prev_jp_text and prev_cn_text:
+                            context = [
+                                {"role": "user", "content": "翻译以下标题。\n" + prev_jp_text},
+                                {"role": "bot", "content": prev_cn_text},
+                            ]
+                        else:
+                            context = None
+                        cn_text = translate(
+                            jp_text,
+                            mode="title_translation",
+                            dryrun=args.dryrun,
+                            skip_name_valid=True,
+                            context=context,
+                        )
                         title_buffer[jp_text] = cn_text
                     ### Translation finished
 
@@ -251,6 +267,9 @@ def main():
                 if len(cn_titles_) != len(jp_titles_):
                     logger.error("Title translation failed.")
                     cn_titles_ = jp_titles_
+                
+                prev_jp_text = jp_text
+                prev_cn_text = cn_text
 
                 if not args.dryrun:
                     for cn_title, jp_title in zip(cn_titles_, jp_titles_):
