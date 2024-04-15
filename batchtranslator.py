@@ -75,11 +75,11 @@ def chapterwise_translate_wrapper(contents: List[str]):
 if __name__ == "__main__":
     # Option chapterwise
     parser = ArgumentParser()
-    parser.add_argument("--chapterwise", action="store_true")
-    if parser.parse_args().chapterwise:
+    parser.add_argument("--independent", action="store_true")
+    if parser.parse_args().independent:
+        book_contents = main(os.path.join('output', config['CN_TITLE'], 'input.epub'))
+        p_map(translate_wrapper, book_contents, num_cpus=config['NUM_PROCS'])
+    else:
         book_contents = main(os.path.join('output', config['CN_TITLE'], 'input.epub'), chapterwise=True)
         book_contents = list(book_contents.values())
         p_map(chapterwise_translate_wrapper, book_contents, num_cpus=config['NUM_PROCS'])
-    else:
-        book_contents = main(os.path.join('output', config['CN_TITLE'], 'input.epub'))
-        p_map(translate_wrapper, book_contents, num_cpus=config['NUM_PROCS'])

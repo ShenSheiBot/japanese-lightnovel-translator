@@ -476,19 +476,28 @@ def main():
                                     if not imgs:  # If there are no <img> tags, decompose the <p> tag
                                         p_tag.decompose()
                 else:
-                    # Full image page, convert all images to full page
-                    for img in soup.find_all(["image", "img"]):
-                        if "width" in img.attrs and "height" in img.attrs:
-                            width = img.attrs["width"]
-                            height = img.attrs["height"]
-                            img.attrs["width"] = "600"
-                            img.attrs["height"] = str(int(600 * int(height) / int(width)))
-                    for img in cn_soup.find_all(["image", "img"]):
-                        if "width" in img.attrs and "height" in img.attrs:
-                            width = img.attrs["width"]
-                            height = img.attrs["height"]
-                            img.attrs["width"] = "600"
-                            img.attrs["height"] = str(int(600 * int(height) / int(width)))
+                    for s in [soup, cn_soup]:
+                        # Now, check for SVG parent and alter if necessary
+                        for svg in s.find_all("svg"):
+                            parent = svg.parent
+                            position_in_parent = parent.contents.index(svg)
+                            svg.extract()
+                            for image in svg.find_all("image"):
+                                new_img = soup.new_tag("img")  # Create a new <img> tag
+                                if 'width' in image.attrs:
+                                    new_img['width'] = "100%"
+                                if 'height' in image.attrs:
+                                    new_img['height'] = "auto"
+                                if 'xlink:href' in image.attrs:
+                                    new_img['src'] = image['xlink:href']
+                                image.replace_with(new_img)
+
+                            # Reinsert the contents of the original SVG in their original position
+                            for content in reversed(svg.contents):
+                                if isinstance(content, str) and not content.strip():
+                                    # Skip adding empty strings that might have been just whitespace
+                                    continue
+                                parent.insert(position_in_parent, content)
 
                 update_content(item, modified_book, title_buffer, soup)
                 update_content(item, cn_book, title_buffer, cn_soup)
