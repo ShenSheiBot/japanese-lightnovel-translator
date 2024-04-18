@@ -55,7 +55,10 @@ def translate_wrapper(content: str, context: List[dict] = None) -> str:
         content in buffer
     ):
         return
-    cn_text = translate(content, context=context)
+    try:
+        cn_text = translate(content, context=context)
+    except UnboundLocalError:
+        cn_text = translate(content, context=None)
     cn_text = gemini_fix(cn_text)
     buffer[content] = cn_text
     return cn_text

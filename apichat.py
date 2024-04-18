@@ -40,18 +40,21 @@ class OpenAIChatApp(APIChatApp):
             api_key=api_key,
             base_url=endpoint
         )
-
-    def chat(self, message):
+        
         self.messages = [
             {
                 "role": "system", 
                 "content": "你是一个轻小说翻译模型，可以流畅通顺地以日本轻小说的风格将日文翻译成简体中文，并联系上下文正确使用人称代词，不擅自添加原文中没有的代词。"
-            }, 
+            }
+        ]
+
+    def chat(self, message):
+        self.messages.append(
             {
                 "role": "user", 
                 "content": message
             }
-        ]
+        )
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -180,7 +183,6 @@ if __name__ == "__main__":
     翻译以下日文轻小说为中文。
     ---
     四つん這いの艾莉亚丝の体が小刻みに震え、次の瞬間には股間から透明な飛沫が後ろに向かって飛んだ。
-
     """
     # print(openai_chat.chat(prompt))
     # print(google_chat.chat(prompt))
