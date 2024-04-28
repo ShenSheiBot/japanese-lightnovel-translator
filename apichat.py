@@ -5,9 +5,11 @@ import yaml
 import time
 import asyncio
 import fastapi_poe as fp
+from fastapi_poe import BotError
 import requests
 import re
 import json
+import random
 
 
 last_chat_time = None
@@ -107,6 +109,11 @@ class GoogleChatApp(APIChatApp):
 
 
 class PoeAPIChatApp:
+    # Backoff variables
+    MAX_BACKOFF_TIME = 20  # Maximum backoff time in seconds
+    BASE_BACKOFF_TIME = 5  # Base backoff time in seconds
+    _BACKOFF_TIME = BASE_BACKOFF_TIME  # Current backoff time
+    
     def __init__(self, api_key, model_name):
         self.api_key = api_key
         self.model_name = model_name
@@ -115,6 +122,18 @@ class PoeAPIChatApp:
     def chat(self, message):
         return asyncio.run(self._async_chat(message))
     
+    @classmethod
+    def get_backoff_time(cls):
+        return cls._BACKOFF_TIME
+    
+    @classmethod
+    def update_backoff_time(cls):
+        cls._BACKOFF_TIME = min(cls._BACKOFF_TIME * 2, cls.MAX_BACKOFF_TIME)
+        
+    @classmethod
+    def reset_backoff_time(cls):
+        cls._BACKOFF_TIME = cls.BASE_BACKOFF_TIME
+
     async def _async_chat(self, message):
         self.messages.append({"role": "user", "content": message})
         final_message = ""
@@ -122,7 +141,19 @@ class PoeAPIChatApp:
             async for partial in fp.get_bot_response(messages=self.messages, bot_name=self.model_name, 
                                                      api_key=self.api_key):
                 final_message += partial.text
-        except Exception as e:
+        except BotError as e:
+            if "rate limit" in str(e):
+                # Exponential backoff
+                backoff_time = self.get_backoff_time()
+                print(f"Rate limit hit, backing off for {backoff_time} seconds.")
+                await asyncio.sleep(backoff_time + random.uniform(0, 1))  # Add some jitter
+                self.update_backoff_time()
+            elif "nternal" in str(e):
+                print(f"Internal server error.")
+                self.reset_backoff_time()
+            else:
+                print(f"API error: {str(e)}")
+                self.reset_backoff_time()
             raise APITranslationFailure(f"Poe API connection failed: {str(e)}")
         return final_message
 

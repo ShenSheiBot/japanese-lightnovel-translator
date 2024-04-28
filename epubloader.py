@@ -287,6 +287,8 @@ def main():
                 total_items += 1
         current_items = 0
         current_time = None
+        prev_jp_text = None
+        prev_cn_text = None
 
         ############ Translate the chapters and TOCs ############
         for item in list(book.get_items()):
@@ -396,7 +398,20 @@ def main():
                                     cn_text = buffer[jp_text]
                                 else:
                                     ### Start translation
-                                    cn_text = translate(jp_text, dryrun=args.dryrun, skip_name_valid=True)
+                                    if prev_jp_text and prev_cn_text:
+                                        context = [
+                                            {"role": "user", "content": "翻译以下标题。\n" + prev_jp_text},
+                                            {"role": "bot", "content": prev_cn_text},
+                                        ]
+                                    else:
+                                        context = None
+
+                                    cn_text = translate(
+                                        jp_text,
+                                        dryrun=args.dryrun,
+                                        context=context,
+                                        skip_name_valid=False
+                                    )
                                     cn_text = gemini_fix(cn_text)
                                     cn_text = post_translate(cn_text)
                                     ### Translation finished
@@ -406,6 +421,9 @@ def main():
                                         buffer[jp_text] = cn_text
 
                                 cn_text = postprocessing(cn_text, verbose=not args.dryrun)
+                                prev_jp_text = jp_text
+                                prev_cn_text = cn_text
+                                
                                 jp_text = txt_to_html(jp_text)
                                 cn_text = txt_to_html(cn_text)
 
@@ -538,7 +556,7 @@ def main():
 
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cnjp.epub", modified_book)
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cn.epub", cn_book)
-    password = ''.join(random.choices(string.digits + string.ascii_letters, k=6))
+    password = ''.join(random.choices(string.digits + string.ascii_letters, k=8))
     zip_folder_7z(
         f"output/{config['CN_TITLE']}/", 
         f"output/{config['CN_TITLE']}/{config['CN_TITLE']}【密码：{password}】.7z",

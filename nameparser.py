@@ -1,15 +1,12 @@
 from utils import load_config, SqlWrapper
 from epubparser import main
 import os
-from apichat import GoogleChatApp, PoeAPIChatApp
+from apichat import GoogleChatApp, PoeAPIChatApp, APITranslationFailure
 import yaml
 from loguru import logger
 import json
 from p_tqdm import p_map
-
-
-class KeyboardInterruptError(Exception):
-    pass
+from tqdm import tqdm
 
 
 with open('resource/namedetect_prompt_3.txt', 'r', encoding='utf-8') as f:
@@ -65,18 +62,14 @@ def extract(content: str):
             response_json = to_json(response)
             buffer[content] = str(response_json)
             return
-        except KeyboardInterrupt:
-            buffer.close()
-            raise KeyboardInterruptError()
-        except Exception:
+        except APITranslationFailure:
             continue
 
 
 if __name__ == "__main__":
     book_contents = main(os.path.join('output', config['CN_TITLE'], 'input.epub'))
-    try:
-        p_map(extract, book_contents, num_cpus=8)
-    except KeyboardInterrupt:
-        print("KeyboardInterrupt caught, terminating processes...")
-        buffer.close()
-        raise KeyboardInterruptError()
+    if config['NUM_PROCS'] == 1:
+        for content in tqdm(book_contents):
+            extract(content)
+    else:
+        p_map(extract, book_contents, num_cpus=config['NUM_PROCS'])

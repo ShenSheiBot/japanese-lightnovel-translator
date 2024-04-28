@@ -301,6 +301,8 @@ def postprocessing(text, verbose=True):
     if contains_trad_chars(text):
         text = convert_jp_char(text)
         text = text.replace("唿", "呼")
+        text = text.replace("隷", "隶")
+        text = text.replace("眞", "真")
         text = text.replace("熘", "溜")
         text = text.replace("勐", "猛")
         text = text.replace("煳", "糊")
@@ -318,10 +320,12 @@ def postprocessing(text, verbose=True):
     pattern = re.compile(r'^[\u0020\u3000-\u303F\u4E00-\u9FFF]*=(?!.*[\u3002])[\u0020\u3000-\u303F\u4E00-\u9FFF]*$')
 
     for i, (line, original_line) in enumerate(zip(lines, original_lines)):
-        if i == 0 and "翻译" in line and ("：" in line or ":" in line):
+        if i == 0 and ("翻译" in line or "飜译" in line) and ("：" in line or ":" in line or "只提供" in line):
             continue
         removed_keywords = ["translation", "-" * 6 + "以下", "翻译" + "-" * 6, "-" * 6 + "中文"]
         removal = False
+        line = line.replace("<p>", "")
+        line = line.replace("</p>", "")
         if pattern.search(line):
             logger.info("Removed line: " + line)
             removal = True
