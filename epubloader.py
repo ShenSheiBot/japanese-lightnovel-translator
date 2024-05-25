@@ -8,7 +8,7 @@ from apichat import OpenAIChatApp, GoogleChatApp, PoeAPIChatApp, BaichuanChatApp
 from utils import txt_to_html, split_string_by_length, sep, postprocessing, remove_duplicate, gemini_fix
 from utils import validate, remove_header, load_config, remove_leading_numbers, get_leading_numbers
 from utils import has_chinese, fix_repeated_chars, update_content, has_kana, replace_section_titles
-from utils import SqlWrapper, zip_folder_7z, convert_san, concat_kanji_rubi, validate_name_convention
+from utils import SqlWrapper, zip_folder, convert_san, concat_kanji_rubi, validate_name_convention
 from loguru import logger
 from prompt import generate_prompt, change_list, name_convention
 import re
@@ -78,6 +78,16 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
             name_violation_count = 0
             min_violate_count = 10000
             cn_text_bck = None
+            if "Poe" in name and api_app.messages:
+                # Replace all role assistant by bot
+                for i, message in enumerate(api_app.messages):
+                    if message['role'] == 'assistant':
+                        api_app.messages[i]['role'] = 'bot'
+            else:
+                # Replace all role bot by assistant
+                for i, message in enumerate(api_app.messages):
+                    if message['role'] == 'bot':
+                        api_app.messages[i]['role'] = 'assistant'
             while flag and retry_count > 0:
                 try:
                     cn_text = api_app.chat(prompt)
@@ -95,7 +105,7 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
                             if violate_count < min_violate_count:
                                 min_violate_count = violate_count
                                 cn_text_bck = deepcopy(cn_text)
-                        if name_violation_count >= 3:
+                        if name_violation_count >= 5:
                             cn_text = cn_text_bck
                             logger.critical(f"-------- {ruuid} Fallback to min violate translation.")
                             flag = False
@@ -106,6 +116,8 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
                 except APITranslationFailure as e:
                     if "Connection error" in str(e) and retry_count == 1:
                         raise
+                    if "rate limit" in str(e):
+                        retry_count += 1
                     logger.critical(f"-------- {ruuid} API translation failed: {e} ----------")
                     pass
                 retry_count -= 1
@@ -206,8 +218,8 @@ def main():
         jp_titles_parts = split_string_by_length(output, 800)
 
         # Traverse the aggregated chapter titles
-        prev_jp_text = None
-        prev_cn_text = None
+        prev_jp_text = []
+        prev_cn_text = []
 
         for jp_text in jp_titles_parts:
             jp_titles_ = jp_text.strip().split('\n')
@@ -234,12 +246,13 @@ def main():
                     elif jp_text in title_buffer and validate(jp_text, title_buffer[jp_text], name_convention):
                         cn_text = title_buffer[jp_text]
                     else:
-                        if prev_jp_text and prev_cn_text:
-                            context = [
-                                {"role": "user", "content": "翻译以下标题。\n" + prev_jp_text},
-                                {"role": "bot", "content": prev_cn_text},
+                        context = []
+                        for pj, pc in zip(prev_jp_text, prev_cn_text):
+                            context += [
+                                {"role": "user", "content": "翻译为中文：\n" + pj},
+                                {"role": "bot", "content": pc},
                             ]
-                        else:
+                        if context == []:
                             context = None
                         cn_text = translate(
                             jp_text,
@@ -268,8 +281,11 @@ def main():
                     logger.error("Title translation failed.")
                     cn_titles_ = jp_titles_
                 
-                prev_jp_text = jp_text
-                prev_cn_text = cn_text
+                prev_jp_text.append(jp_text)
+                prev_cn_text.append(cn_text)
+                if len(prev_jp_text) > 2:
+                    prev_jp_text.pop(0)
+                    prev_cn_text.pop(0)
 
                 if not args.dryrun:
                     for cn_title, jp_title in zip(cn_titles_, jp_titles_):
@@ -287,8 +303,8 @@ def main():
                 total_items += 1
         current_items = 0
         current_time = None
-        prev_jp_text = None
-        prev_cn_text = None
+        prev_jp_text = []
+        prev_cn_text = []
 
         ############ Translate the chapters and TOCs ############
         for item in list(book.get_items()):
@@ -398,14 +414,14 @@ def main():
                                     cn_text = buffer[jp_text]
                                 else:
                                     ### Start translation
-                                    if prev_jp_text and prev_cn_text:
-                                        context = [
-                                            {"role": "user", "content": "翻译以下标题。\n" + prev_jp_text},
-                                            {"role": "bot", "content": prev_cn_text},
+                                    context = []
+                                    for pj, pc in zip(prev_jp_text, prev_cn_text):
+                                        context += [
+                                            {"role": "user", "content": "翻译为中文：\n" + pj},
+                                            {"role": "bot", "content": pc},
                                         ]
-                                    else:
+                                    if context == []:
                                         context = None
-
                                     cn_text = translate(
                                         jp_text,
                                         dryrun=args.dryrun,
@@ -421,8 +437,11 @@ def main():
                                         buffer[jp_text] = cn_text
 
                                 cn_text = postprocessing(cn_text, verbose=not args.dryrun)
-                                prev_jp_text = jp_text
-                                prev_cn_text = cn_text
+                                prev_jp_text.append(jp_text)
+                                prev_cn_text.append(cn_text)
+                                if len(prev_jp_text) > 2:
+                                    prev_jp_text.pop(0)
+                                    prev_cn_text.pop(0)
                                 
                                 jp_text = txt_to_html(jp_text)
                                 cn_text = txt_to_html(cn_text)
@@ -557,9 +576,9 @@ def main():
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cnjp.epub", modified_book)
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cn.epub", cn_book)
     password = ''.join(random.choices(string.digits + string.ascii_letters, k=8))
-    zip_folder_7z(
+    zip_folder(
         f"output/{config['CN_TITLE']}/", 
-        f"output/{config['CN_TITLE']}/{config['CN_TITLE']}【密码：{password}】.7z",
+        f"output/{config['CN_TITLE']}/{config['CN_TITLE']}【密码：{password}】.zip",
         password=password
     )
 

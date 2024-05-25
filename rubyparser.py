@@ -9,7 +9,7 @@ import yaml
 
 config = load_config()
 
-with open("translation.yaml", "r") as f:
+with open("config/rubyparser.yaml", "r") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)    
 
 

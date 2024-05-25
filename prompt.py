@@ -29,7 +29,7 @@ if os.path.exists(f"output/{config['CN_TITLE']}/names_updated.json"):
                 change_list.add(name)
         name_convention = names_updated
         logger.info(f"Changed name conventions: {change_list}")
-        
+
 name_convention_short = {k: (v["cn_name"] if type(v) is dict else v) for k, v in name_convention.items()}
 logger.info(f"Loaded name conventions: {name_convention_short}")
 
@@ -56,7 +56,7 @@ def generate_prompt(text, mode="translation"):
 
     ## Soft
     if len(appeared_names) > 0:
-        if type(list(appeared_names.values())[0]) is dict:
+        if mode != "sakura" and type(list(appeared_names.values())[0]) is dict:
             ppt = "在翻译时，考虑如下的翻译背景：\n"
             for key in appeared_names:
                 if key in text:
@@ -101,25 +101,25 @@ def generate_prompt(text, mode="translation"):
             prompt = ppt + '\n' + prompt
 
         elif mode == "sakura":
-            ppt = "在翻译时，遵守如下的日中人名/地名惯例：\n"
-            ppt += "\n".join([f"{key} -> {value}" for key, value in list(appeared_names.items())[:20] if key in text])
+            ppt = "术语表：\n"
+            ppt += "\n".join(
+                [
+                    f"{key} = {value['cn_name']}"
+                    for key, value in list(appeared_names.items())[:20]
+                    if key in text
+                ]
+            )
             prompt = ppt + '\n' + prompt
         else:
             prompt += "在翻译时，尽量不要包含任何英文，遵守如下的日中人名/地名惯例：\n"
             prompt += "\n".join([f"{key} = {value}" for key, value in list(appeared_names.items())[:20] if key in text])
 
     if mode == "sakura":
+        for key, value in list(appeared_names.items())[:20]:
+            text = text.replace(key, value['cn_name'])
         return prompt + text
 
     ## Hard
-    # for jp_name in appeared_names:
-    #     if len(jp_name) >= 3 and jp_name not in soft_name_convention:
-    #         pattern = r'(?<!\uff08)' + re.escape(jp_name) + r'(?!\uff09)'
-    #         if len(appeared_names) > 0 and type(list(appeared_names.values())[0]) is dict:
-    #             cn_name = appeared_names[jp_name]['cn_name']
-    #         else:
-    #             cn_name = appeared_names[jp_name]
-    #         text = re.sub(pattern, cn_name, text)
 
     prompt += "\n\n---------------以下是日文原文---------------\n\n"
     if "无法翻译" in text or "无法翻译" in prompt:

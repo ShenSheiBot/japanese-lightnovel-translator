@@ -134,7 +134,7 @@ if __name__ == "__main__":
                 continue
             for ele in entry:
                 name = ele['name']
-                info = ele['info']
+                info = ele['info'] if 'info' in ele else ''
                 
                 info = set([tagmap(tag) for tag in info.replace(',', '，').split('，')])
                 prev_info = set(names[name]['info'].keys()) if name in names else set()

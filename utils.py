@@ -79,7 +79,7 @@ def txt_to_html(text, tag="p"):
     return "\n".join(html_paragraphs)
 
 
-def split_string_by_length(text, max_length=1000):
+def split_string_by_length(text, max_length=500):
     parts = []
     count = 0
     while len(text) > max_length:
@@ -412,7 +412,7 @@ def validate_name_convention(input, text, name_convention=None):
     text = text.replace("＝", "=").replace("・", "·").replace(" ", "")
     if name_convention is not None:
         for jp_name, cn_name in appeared_names.items():
-            if len(jp_name) <= 2:
+            if len(jp_name) < 2:
                 continue
             if type(cn_name) is dict:
                 cn_name = cn_name["cn_name"]
@@ -633,6 +633,36 @@ def update_content(item, new_book, title_buffer, updated_content):
             href = link.attrs['href']
             if href.endswith('css'):
                 modified_item.add_link(href=href, rel='stylesheet', type='text/css')
+
+
+def zip_folder(folder_path, output_path, password='114514'):
+    """
+    Create a password-protected ZIP file (Note: without encrypted filenames) from the contents of a folder.
+    Only include .epub and .json files, except for 'names.json' if 'names_updated.json' exists in the same folder.
+
+    :param folder_path: Path to the folder to be archived.
+    :param output_path: Path where the ZIP file will be created.
+    :param password: Password for the ZIP file (only ZIP 2.0 encryption supported, which is not secure).
+    """
+    with zipfile.ZipFile(output_path, 'w', compression=zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(folder_path):
+            # Check for 'names_updated.json' in the current folder
+            names_updated_exists = 'names_updated.json' in files
+
+            # Filter the files to include only .epub and .json files
+            files_to_add = [f for f in files if f.endswith('.epub') or f.endswith('.json')]
+            for file_name in files_to_add:
+                # Skip 'names.json' if 'names_updated.json' exists in the same folder
+                if names_updated_exists and file_name == 'names.json':
+                    continue
+
+                file_path = os.path.join(root, file_name)
+                archive_path = os.path.relpath(file_path, folder_path)  # Preserve folder structure within the archive
+                zipf.write(file_path, archive_path)
+
+            # Setting password (note that this applies weak encryption to file contents only)
+            if password:
+                zipf.setpassword(bytes(password, 'utf-8'))
 
 
 def zip_folder_7z(folder_path, output_path, password='114514'):

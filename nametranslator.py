@@ -10,7 +10,7 @@ from utils import (
 import yaml
 import os
 import json
-from apichat import GoogleChatApp, PoeAPIChatApp
+from apichat import GoogleChatApp, PoeAPIChatApp, OpenAIChatApp
 from loguru import logger
 import re
 from epubparser import main
@@ -28,7 +28,7 @@ rubies = set()
 
 with open("resource/nametranslate_prompt.txt", "r", encoding="utf-8") as f:
     prompt = f.read()
-    prompt_user, prompt_bot = prompt.split("\n---\n")
+    prompt_user, prompt_bot, sakura_prompt_bot = prompt.split("\n---\n")
 
 
 def generate_msg(to_query, example_sentences):
@@ -77,6 +77,8 @@ def to_json(s):
     s = s.replace('\'', '"')
     s = s.replace("：", ":")
     s = re.sub(r',\s*}', '}', s)
+    s = re.sub(r'//.*', '', s)
+    s = re.sub(r',\s*}', '}', s)
     if s.strip() == '':
         return []
     try:
@@ -88,6 +90,8 @@ def to_json(s):
         logger.critical(f"Unparsable: {s}")
         return None
     for jp_name, cn_name in j.items():
+        if cn_name == "":
+            cn_name = jp_name
         cn_name = cn_name.replace("ちゃん", "酱")
         res = re.sub(r'[\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF]', '之', cn_name)
         if res.count("之") > 1:
@@ -197,6 +201,22 @@ if __name__ == "__main__":
                                 "content": prompt_bot
                             }
                         ]
+                    elif 'Sakura' in jp_name:
+                        api_app = OpenAIChatApp(
+                            api_key=model["key"],
+                            model_name=model["name"],
+                            endpoint=model["endpoint"],
+                        )
+                        api_app.messages = [
+                            {
+                                "role": "user",
+                                "content": prompt_user
+                            },
+                            {
+                                "role": "assistant",
+                                "content": sakura_prompt_bot
+                            }
+                        ]
                     else:
                         continue
 
@@ -244,11 +264,11 @@ if __name__ == "__main__":
                     "alias": names[jp_name]["alias"],
                     "info": info
                 }
-            if api_app:
-                api_app = PoeAPIChatApp(api_key=translation_config['Poe-claude-api']['key'], model_name='GPT-4')
-                response = api_app.chat("请指出以下中日对照术语翻译中有问题的项：\n" + response + "\n请用中文回答，不要描述翻译正确的项。")
-                logger.error(response)
-                
+            # if api_app:
+            #     api_app = PoeAPIChatApp(api_key=translation_config['Poe-claude-api']['key'], model_name='GPT-4')
+            #     response = api_app.chat("请指出以下中日对照术语翻译中有问题的项：\n" + response + "\n请用中文回答，不要描述翻译正确的项。")
+            #     logger.error(response)
+
         items_to_process = list(names_processed.items())
         for jp_name, cn_name in items_to_process:
             info = cn_name['info']
@@ -267,7 +287,7 @@ if __name__ == "__main__":
                             "alias": names[jp_name]["alias"],
                             "info": info
                         }
-                
+
         for jp_name, cn_name in names_processed.items():
             cn_name = cn_name['cn_name']
             if not has_kana(jp_name) and not has_kana(cn_name) and has_chinese(jp_name) and has_chinese(cn_name):

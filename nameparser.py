@@ -12,7 +12,7 @@ from tqdm import tqdm
 with open('resource/namedetect_prompt_3.txt', 'r', encoding='utf-8') as f:
     prompt = f.read()
 
-with open("translation.yaml", "r") as f:
+with open("config/nameparser.yaml", "r") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)    
     
 config = load_config()
@@ -62,7 +62,7 @@ def extract(content: str):
             response_json = to_json(response)
             buffer[content] = str(response_json)
             return
-        except APITranslationFailure:
+        except APITranslationFailure or OSError:
             continue
 
 
