@@ -1,7 +1,7 @@
 from utils import load_config, SqlWrapper
 from epubparser import main
 import os
-from apichat import GoogleChatApp, PoeAPIChatApp, APITranslationFailure
+from apichat import GoogleChatApp, PoeAPIChatApp, OpenAIChatApp, APITranslationFailure
 import yaml
 from loguru import logger
 import json
@@ -53,6 +53,8 @@ def extract(content: str):
             api_app = GoogleChatApp(api_key=model['key'], model_name=model['name'])
         elif 'Poe' in name:
             api_app = PoeAPIChatApp(api_key=model['key'], model_name=model['name'])
+        elif 'OpenAI' in name:
+            api_app = OpenAIChatApp(api_key=model['key'], model_name=model['name'], endpoint=model['endpoint'])
         else:
             continue
         
