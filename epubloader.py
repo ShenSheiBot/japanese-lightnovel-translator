@@ -8,9 +8,10 @@ from apichat import OpenAIChatApp, GoogleChatApp, PoeAPIChatApp, BaichuanChatApp
 from utils import txt_to_html, split_string_by_length, sep, postprocessing, remove_duplicate, gemini_fix
 from utils import validate, remove_header, load_config, remove_leading_numbers, get_leading_numbers
 from utils import has_chinese, fix_repeated_chars, update_content, has_kana, replace_section_titles
-from utils import SqlWrapper, zip_folder, convert_san, concat_kanji_rubi, validate_name_convention
+from utils import get_filtered_tags
+from utils import SqlWrapper, zip_folder_7z, convert_san, concat_kanji_rubi, validate_name_convention
 from loguru import logger
-from prompt import generate_prompt, change_list, name_convention
+from prompt import generate_prompt, change_list, name_convention, sakura_prompt
 import re
 import warnings
 import yaml
@@ -24,6 +25,8 @@ warnings.filterwarnings('ignore', category=XMLParsedAsHTMLWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
 with open("translation.yaml", "r") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)
+with open("config/epubloader.yaml", "r") as f:
+    epubloader_config = yaml.load(f, Loader=yaml.FullLoader)
 webapp = None
 config = load_config()
 name_convention[config['JP_TITLE']] = {
@@ -49,7 +52,7 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
     for name, model in translation_config.items():
         
         if "Sakura" in name:
-            prompt = generate_prompt(jp_text, mode="sakura")
+            prompt = sakura_prompt(jp_text, name_convention, mode="soft-hard")
             logger.info(f"\n-------- {ruuid} Prompt --------\n\n" + prompt + "\n------------------------\n\n")
         else:
             prompt = generate_prompt(jp_text, mode=mode)
@@ -94,6 +97,12 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
                     cn_text = remove_header(cn_text)
                     
                     valid = validate(jp_text, cn_text, name_convention)
+                    text_new_line_count = cn_text.count("\n")
+                    input_new_line_count = jp_text.count("\n")
+                    if input_new_line_count > 3:
+                        if text_new_line_count / input_new_line_count < 0.5:
+                            retry_count += 1
+                    
                     violate_count = validate_name_convention(jp_text, cn_text, name_convention)
                     valid_name = violate_count == 0
                     if skip_name_valid:
@@ -105,7 +114,7 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
                             if violate_count < min_violate_count:
                                 min_violate_count = violate_count
                                 cn_text_bck = deepcopy(cn_text)
-                        if name_violation_count >= 5:
+                        if 'NAME_VIOLATION_LIMIT' in config and name_violation_count >= config['NAME_VIOLATION_LIMIT']:
                             cn_text = cn_text_bck
                             logger.critical(f"-------- {ruuid} Fallback to min violate translation.")
                             flag = False
@@ -118,6 +127,10 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
                         raise
                     if "rate limit" in str(e):
                         retry_count += 1
+                    if "503 Service Unavailable" in str(e):
+                        retry_count += 1
+                        # Sleep for 10 minutes
+                        time.sleep(600)
                     logger.critical(f"-------- {ruuid} API translation failed: {e} ----------")
                     pass
                 retry_count -= 1
@@ -215,7 +228,7 @@ def main():
             name = navpoint.find('text').get_text(strip=True)
             output += str(i) + " " + name + "\n"
             jp_titles.append(name)
-        jp_titles_parts = split_string_by_length(output, 800)
+        jp_titles_parts = split_string_by_length(output, epubloader_config["TITLE_SPLIT_LEN"])
 
         # Traverse the aggregated chapter titles
         prev_jp_text = []
@@ -249,7 +262,7 @@ def main():
                         context = []
                         for pj, pc in zip(prev_jp_text, prev_cn_text):
                             context += [
-                                {"role": "user", "content": "翻译为中文：\n" + pj},
+                                {"role": "user", "content": sakura_prompt(pj, name_convention, mode="soft")},
                                 {"role": "bot", "content": pc},
                             ]
                         if context == []:
@@ -283,7 +296,7 @@ def main():
                 
                 prev_jp_text.append(jp_text)
                 prev_cn_text.append(cn_text)
-                if len(prev_jp_text) > 2:
+                if len(prev_jp_text) > epubloader_config["CONTEXT_LEN"]:
                     prev_jp_text.pop(0)
                     prev_cn_text.pop(0)
 
@@ -302,23 +315,15 @@ def main():
             and "TOC" not in item.id and "toc" not in item.id:
                 total_items += 1
         current_items = 0
-        current_time = None
         prev_jp_text = []
         prev_cn_text = []
 
         ############ Translate the chapters and TOCs ############
-        for item in list(book.get_items()):
+        for item in tqdm(book.get_items(), total=total_items, unit="item"):
 
             if isinstance(item, epub.EpubHtml) and not isinstance(item, epub.EpubNav) \
             and "TOC" not in item.id and "toc" not in item.id:
-                current_items += 1
                 logger.info(f"Translating {item.id} ({current_items}/{total_items}) ...")
-                # Estimate remaining time
-                if current_items > 1:
-                    elapsed_time = time.time() - current_time
-                    remaining_time = elapsed_time * (total_items - current_items)
-                    logger.info(f"Estimated remaining time: {remaining_time / 60:.2f} minutes")
-                current_time = time.time()
 
                 content = item.content.decode("utf-8")
                 # Parse HTML and extract text
@@ -353,10 +358,10 @@ def main():
                             intro_div.clear()
                             intro_div.append(BeautifulSoup(new_content, 'html.parser'))  
 
-                if soup.body.find(["p", "h1", "h2", "h3"]):
+                if soup.body.find(["p", "h1", "h2", "h3", "h4", "h5", "h6"]):
                     # Extract paragraphs and join them with new lines
-                    paragraphs = soup.find_all(["p", "h1", "h2", "h3", "img", "image"])
-                    paragraphs_ = cn_soup.find_all(["p", "h1", "h2", "h3", "img", "image"])
+                    paragraphs = get_filtered_tags(soup)
+                    paragraphs_ = get_filtered_tags(cn_soup)
 
                     # Get consecutive paragraphs and titles
                     jp_text_collection = []
@@ -417,7 +422,8 @@ def main():
                                     context = []
                                     for pj, pc in zip(prev_jp_text, prev_cn_text):
                                         context += [
-                                            {"role": "user", "content": "翻译为中文：\n" + pj},
+                                            {"role": "user", 
+                                             "content": sakura_prompt(pj, name_convention, mode="soft")},
                                             {"role": "bot", "content": pc},
                                         ]
                                     if context == []:
@@ -439,7 +445,7 @@ def main():
                                 cn_text = postprocessing(cn_text, verbose=not args.dryrun)
                                 prev_jp_text.append(jp_text)
                                 prev_cn_text.append(cn_text)
-                                if len(prev_jp_text) > 2:
+                                if len(prev_jp_text) > epubloader_config["CONTEXT_LEN"]:
                                     prev_jp_text.pop(0)
                                     prev_cn_text.pop(0)
                                 
@@ -509,9 +515,10 @@ def main():
 
                             if decomposable:
                                 for p_tag in ps_ + ps:  # Combining the lists for simplicity
-                                    imgs = p_tag.find_all("img")
-                                    if not imgs:  # If there are no <img> tags, decompose the <p> tag
-                                        p_tag.decompose()
+                                    # imgs = p_tag.find_all("img")
+                                    # if not imgs:  # If there are no <img> tags, decompose the <p> tag
+                                    #     p_tag.decompose()
+                                    p_tag.decompose()
                 else:
                     for s in [soup, cn_soup]:
                         # Now, check for SVG parent and alter if necessary
@@ -575,10 +582,10 @@ def main():
 
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cnjp.epub", modified_book)
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cn.epub", cn_book)
-    password = ''.join(random.choices(string.digits + string.ascii_letters, k=8))
-    zip_folder(
+    password = ''.join(random.choices(string.digits + string.ascii_letters + ",.-+=", k=6))
+    zip_folder_7z(
         f"output/{config['CN_TITLE']}/", 
-        f"output/{config['CN_TITLE']}/{config['CN_TITLE']}【密码：{password}】.zip",
+        f"output/{config['CN_TITLE']}/{config['CN_TITLE']}【密码：{password}】.7z",
         password=password
     )
 

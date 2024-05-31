@@ -61,7 +61,9 @@ class OpenAIChatApp(APIChatApp):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=self.messages,
-                temperature=self.temperature
+                temperature=self.temperature,
+                stop=["<|im_end|>"],
+                frequency_penalty=0.5
             )
             self.messages = [{"role": "assistant", "content": response.choices[0].message.content}]
             self.response = response

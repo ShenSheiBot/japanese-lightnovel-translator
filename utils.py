@@ -2,7 +2,7 @@ import random
 import re
 import os
 import ast
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup
 from hanziconv import HanziConv
 from loguru import logger
 from copy import deepcopy
@@ -11,7 +11,7 @@ import yaml
 import sys
 import zipfile
 import py7zr
-from py7zr import FILTER_LZMA2, FILTER_CRYPTO_AES256_SHA256, PRESET_DEFAULT, FILTER_ARM
+from py7zr import FILTER_LZMA
 import functools
 from ja_sentence_segmenter.common.pipeline import make_pipeline
 from ja_sentence_segmenter.concatenate.simple_concatenator import concatenate_matching
@@ -59,6 +59,20 @@ def load_config(filepath='.env'):
                 except (ValueError, SyntaxError):
                     pass
                 config[key] = value
+    if "JP_TITLE" in os.environ:
+        config["JP_TITLE"] = os.environ["JP_TITLE"]
+        if config["JP_TITLE"].startswith('"') and config["JP_TITLE"].endswith('"'):
+            config["JP_TITLE"] = config["JP_TITLE"][1:-1]
+        if config["JP_TITLE"].startswith("'") and config["JP_TITLE"].endswith("'"):
+            config["JP_TITLE"] = config["JP_TITLE"][1:-1]
+        logger.info(f"JP_TITLE: {config['JP_TITLE']}")
+    if "CN_TITLE" in os.environ:
+        config["CN_TITLE"] = os.environ["CN_TITLE"]
+        if config["CN_TITLE"].startswith('"') and config["CN_TITLE"].endswith('"'):
+            config["CN_TITLE"] = config["CN_TITLE"][1:-1]
+        if config["CN_TITLE"].startswith("'") and config["CN_TITLE"].endswith("'"):
+            config["CN_TITLE"] = config["CN_TITLE"][1:-1]
+        logger.info(f"CN_TITLE: {config['CN_TITLE']}")
     return config
 
 
@@ -141,7 +155,13 @@ def fix_repeated_chars(line):
     line = re.sub(r'[\.]{3,5}', '…', line)
     line = re.sub(r'[・]{6,}', '……', line)
     line = re.sub(r'[・]{3,5}', '…', line)
+    line = re.sub(r'\n\n+', '\n\n', line)
+    line = re.sub(r'---+', '——-', line)
     line = replace_quotes(line)
+    
+    # import demoji
+    # line = demoji.replace(line, '、')
+    
     return line
 
 
@@ -262,8 +282,6 @@ def gemini_fix(text):
     text = text.replace("センス", "品味")
     text = text.replace("を重ね", "重复")
     text = text.replace("それよりも", "在那之前")
-    text = text.replace("ッ", "")
-    text = text.replace("vagina", "小穴")
     text = text.replace("兄様", "兄长大人")
     text = text.replace("兄样", "兄长大人")
     text = text.replace("姐様", "姐姐大人")
@@ -272,6 +290,7 @@ def gemini_fix(text):
     text = text.replace("ちゃん", "酱")
     text = text.replace("相棒", "伙伴")
     text = text.replace("参谀", "参谋")
+    text = text.replace("\n---\n", "\n\n")
     # If text immediate before and after chan is not English character
     text = re.sub(r'(?<![A-Za-z])chan(?![A-Za-z])', "酱", text)
     # same with san
@@ -295,32 +314,13 @@ def postprocessing(text, verbose=True):
     text = replace_goro(text)
     text = replace_uoraaa(text)
     text = fix_repeated_chars(text)
-    from prompt import name_convention
-    text = convert_san(text, name_convention=name_convention)
-    
-    if contains_trad_chars(text):
-        text = convert_jp_char(text)
-        text = text.replace("唿", "呼")
-        text = text.replace("隷", "隶")
-        text = text.replace("眞", "真")
-        text = text.replace("熘", "溜")
-        text = text.replace("勐", "猛")
-        text = text.replace("煳", "糊")
-        text = text.replace("嵴", "脊")
-        text = text.replace("着名", "著名")
-        text = text.replace("着作", "著作")
-        text = text.replace("着有", "著有")
-        text = text.replace("显着", "显著")
-        text = text.replace("噼头盖脸", "劈头盖脸")
-        text = text.replace("噼开", "劈开")
-    text = text.replace("参谀", "参谋")
     
     lines = text.split("\n")
     filtered_lines = []
     pattern = re.compile(r'^[\u0020\u3000-\u303F\u4E00-\u9FFF]*=(?!.*[\u3002])[\u0020\u3000-\u303F\u4E00-\u9FFF]*$')
 
     for i, (line, original_line) in enumerate(zip(lines, original_lines)):
-        if i == 0 and ("翻译" in line or "飜译" in line) and ("：" in line or ":" in line or "只提供" in line):
+        if i == 0 and "翻译" in line and ("：" in line or ":" in line or "只提供" in line):
             continue
         removed_keywords = ["translation", "-" * 6 + "以下", "翻译" + "-" * 6, "-" * 6 + "中文"]
         removal = False
@@ -330,8 +330,6 @@ def postprocessing(text, verbose=True):
             logger.info("Removed line: " + line)
             removal = True
             break
-        elif "=" in line:
-            line = line.replace("=", "·")
         for keyword in removed_keywords:
             if keyword in line:
                 logger.info("Removed line: " + line)
@@ -380,6 +378,36 @@ def contains_trad_chars(check_string):
     for char in check_string:
         if char in trad_chars:
             return True
+
+
+def get_filtered_tags(soup):
+    def is_eligible_div(tag):
+        # A div is eligible if it does not contain any of the specified tags
+        return tag.name == "div" and not tag.find_all(
+            [
+                "h1",
+                "h2",
+                "h3",
+                "h4",
+                "h5",
+                "h6",
+                "p",
+                "div",
+                "blockquote",
+                "img",
+                "image",
+            ]
+        )
+
+    # Find all eligible elements, including divs
+    eligible_elements = soup.find_all(
+        ["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote"]
+    ) + soup.find_all(is_eligible_div)
+
+    # Sort elements by their position in the document
+    sorted_elements = sorted(eligible_elements, key=lambda x: x.parent.contents.index(x))
+
+    return sorted_elements
 
 
 def num_failure(input, text, name_convention=None):
@@ -465,6 +493,7 @@ def convert_san(text, name_convention):
     text = re.sub(r"(.{1,5})样", replace_sama, text)
     text = re.sub(r"(.{1,5})先生", replace_sama, text)
     text = re.sub(r"(.{1,5})小姐", replace_sama, text)
+    text = re.sub(r'\n[—–-]+\s*\n', '\n\n', text)
 
     return text.replace("さん", "").replace("san", "")
 
@@ -480,7 +509,7 @@ def validate(input, text, name_convention=None):
         if text_new_line_count / input_new_line_count < 0.5:
             logger.critical("Too few new lines.")
             return False
-        
+
     text = postprocessing(text, verbose=False)
     text_bracket_count = text.count("【") + 1
     input_bracket_count = input.count("【") + input.count("[") + 1
@@ -488,7 +517,7 @@ def validate(input, text, name_convention=None):
         logger.critical(f"Too many brackets: {text_bracket_count}/{input_bracket_count}")
         logger.critical(text)
         return False
-    
+
     # text_new_line_count = len([line for line in text.split('\n') if line.strip() != ''])
     # input_new_line_count = len([line for line in input.split('\n') if line.strip() != ''])
     # if input_new_line_count == 1:
@@ -635,36 +664,6 @@ def update_content(item, new_book, title_buffer, updated_content):
                 modified_item.add_link(href=href, rel='stylesheet', type='text/css')
 
 
-def zip_folder(folder_path, output_path, password='114514'):
-    """
-    Create a password-protected ZIP file (Note: without encrypted filenames) from the contents of a folder.
-    Only include .epub and .json files, except for 'names.json' if 'names_updated.json' exists in the same folder.
-
-    :param folder_path: Path to the folder to be archived.
-    :param output_path: Path where the ZIP file will be created.
-    :param password: Password for the ZIP file (only ZIP 2.0 encryption supported, which is not secure).
-    """
-    with zipfile.ZipFile(output_path, 'w', compression=zipfile.ZIP_DEFLATED) as zipf:
-        for root, dirs, files in os.walk(folder_path):
-            # Check for 'names_updated.json' in the current folder
-            names_updated_exists = 'names_updated.json' in files
-
-            # Filter the files to include only .epub and .json files
-            files_to_add = [f for f in files if f.endswith('.epub') or f.endswith('.json')]
-            for file_name in files_to_add:
-                # Skip 'names.json' if 'names_updated.json' exists in the same folder
-                if names_updated_exists and file_name == 'names.json':
-                    continue
-
-                file_path = os.path.join(root, file_name)
-                archive_path = os.path.relpath(file_path, folder_path)  # Preserve folder structure within the archive
-                zipf.write(file_path, archive_path)
-
-            # Setting password (note that this applies weak encryption to file contents only)
-            if password:
-                zipf.setpassword(bytes(password, 'utf-8'))
-
-
 def zip_folder_7z(folder_path, output_path, password='114514'):
     """
     Create a password-protected 7z file with encrypted file names from the contents of a folder.
@@ -674,11 +673,7 @@ def zip_folder_7z(folder_path, output_path, password='114514'):
     :param output_path: Path where the 7z file will be created.
     :param password: Password for the 7z archive.
     """
-    filters = [
-        {"id": FILTER_ARM},
-        {"id": FILTER_LZMA2, "preset": PRESET_DEFAULT},
-        {"id": FILTER_CRYPTO_AES256_SHA256},
-    ]
+    filters = [{'id': FILTER_LZMA}]
     with py7zr.SevenZipFile(output_path, 'w', password=password, filters=filters) as archive:
         # Add ad.jpg to the archive
         ad_path = os.path.join(os.getcwd(), 'ad.jpg')

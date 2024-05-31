@@ -16,7 +16,7 @@ import re
 from epubparser import main
 
 
-with open("translation.yaml", "r", encoding="utf-8") as f:
+with open("config/nametranslator.yaml", "r", encoding="utf-8") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)    
 
 config = load_config()
@@ -32,26 +32,24 @@ with open("resource/nametranslate_prompt.txt", "r", encoding="utf-8") as f:
 
 
 def generate_msg(to_query, example_sentences):
-    json_msg = "{\n"
+    json_msg = ""
     for name in to_query:
-        json_msg += f"    \"{name}\": \"\",  "
+        json_msg += name
         tags = [tag for tag in names[name]['info'] if tag != "人名" and tag != "術語"]
         tags.sort(key=lambda x: names[name]['info'][x]['count'], reverse=True)
         tags = tags[:5]
         
         if tags:
             json_msg += (
-                "// " + ", ".join(tags) + "， "
+                "：" + "，".join(tags) + "，"
             )
         else:
-            json_msg += "//"
+            json_msg = json_msg + "："
         if "example sentence" not in example_sentences[name]:
-            json_msg = json_msg.rstrip() + " 例句：" + example_sentences[name] + f"，<{name}>\n"
+            json_msg = json_msg.rstrip() + " 例句：" + example_sentences[name] + f",<{name}>\n"
         else:
-            json_msg = json_msg[:-2] + f"，<{name}>\n"
-            
-    json_msg = json_msg + "}"
-    return json_msg
+            json_msg = json_msg[:-2] + f",<{name}>"
+    return """翻译以下日文文本为中文：\n""" + json_msg
 
 
 def add_translated(msg, names_original, names_processed):
@@ -72,26 +70,14 @@ def add_translated(msg, names_original, names_processed):
     return msg
 
 
-def to_json(s):
-    s = s[s.find("{"):s.rfind("}") + 1]
-    s = s.replace('\'', '"')
-    s = s.replace("：", ":")
-    s = re.sub(r',\s*}', '}', s)
-    s = re.sub(r'//.*', '', s)
-    s = re.sub(r',\s*}', '}', s)
-    if s.strip() == '':
-        return []
-    try:
-        j = json.loads(s)
-    except json.decoder.JSONDecodeError:
-        logger.critical(f"Unparsable: {s}")
-        return None
-    if j is None:
-        logger.critical(f"Unparsable: {s}")
-        return None
-    for jp_name, cn_name in j.items():
-        if cn_name == "":
-            cn_name = jp_name
+def to_json(s, jp_names):
+    s = s.replace(":", "：")
+    lines = s.strip().split("\n")
+    assert ['：' in line for line in lines], f"Invalid response: {lines}"
+    j = [line.split("：")[0].strip() for line in lines]
+    rtn = {}
+    assert len(j) == len(jp_names), f"Result length mismatch: {len(j)} {len(jp_names)}"
+    for jp_name, cn_name in zip(jp_names, j):
         cn_name = cn_name.replace("ちゃん", "酱")
         res = re.sub(r'[\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF]', '之', cn_name)
         if res.count("之") > 1:
@@ -100,21 +86,18 @@ def to_json(s):
         else:
             cn_name = res
         cn_name = re.sub(r'(.)々', r'\1\1', cn_name)
-
-        # if not has_kana(jp_name) and not has_kana(cn_name) and has_chinese(jp_name) and has_chinese(cn_name):
-        #     cn_name = postprocessing(cn_name)
         if (
             "・" not in jp_name
             and "·" not in jp_name
             and "＝" not in jp_name
             and "=" not in jp_name
         ) and ("・" in cn_name or "·" in cn_name):
-            j[jp_name] = cn_name.replace("・", "").replace("·", "")
+            rtn[jp_name] = cn_name.replace("・", "").replace("·", "")
         # if "・" in jp_name and "・" not in cn_name and "·" not in cn_name:
         #     logger.critical(f"Missing ・: {jp_name} {cn_name}")
         #     return None, j
-        j[jp_name] = cn_name.replace("＝", "・").replace("=", "・").replace("·", "・")
-    return j
+        rtn[jp_name] = cn_name.replace("＝", "・").replace("=", "・").replace("·", "・")
+    return rtn
 
 
 if __name__ == "__main__":
@@ -146,7 +129,7 @@ if __name__ == "__main__":
                         to_query.append(neighbor)
                         queue.append(neighbor)
 
-    to_querys = [to_query[i:i + 15] for i in range(0, len(to_query), 15)]
+    to_querys = [to_query[i:i + 5] for i in range(0, len(to_query), 5)]
     for to_query in to_querys:
         msgs.append(generate_msg(to_query, example_sentences))
         total_names += len(to_query)
@@ -169,7 +152,7 @@ if __name__ == "__main__":
 
             if msg in buffer and buffer[msg] != "[]":
                 try:
-                    response_json = to_json(buffer[msg])
+                    response_json = yaml.load(buffer[msg], Loader=yaml.FullLoader)
                     if type(response_json) is tuple:
                         response_json = response_json[1]
                     elif response_json is None:
@@ -177,6 +160,7 @@ if __name__ == "__main__":
                     retranslate = False
                 except Exception as e:
                     logger.critical(e)
+                    raise
             if retranslate:
                 original_msg = msg
                 msg = add_translated(msg, names, names_processed)
@@ -217,6 +201,22 @@ if __name__ == "__main__":
                                 "content": sakura_prompt_bot
                             }
                         ]
+                    elif 'OpenAI' in jp_name:
+                        api_app = OpenAIChatApp(
+                            api_key=model["key"],
+                            model_name=model["name"],
+                            endpoint=model["endpoint"],
+                        )
+                        api_app.messages = [
+                            {
+                                "role": "user",
+                                "content": prompt_user
+                            },
+                            {
+                                "role": "assistant",
+                                "content": sakura_prompt_bot
+                            }
+                        ]
                     else:
                         continue
 
@@ -224,10 +224,11 @@ if __name__ == "__main__":
 
                     while flag and retry_count > 0:
                         try:
-                            logger.info(msg)
+                            logger.debug("\n" + msg)
                             response = api_app.chat(msg + "\n请用中文回答。")
-                            logger.info(response)
-                            result = to_json(response)
+                            logger.info("\n" + response)
+                            result = to_json(response, name_list)
+                            logger.success("\n" + json.dumps(result, ensure_ascii=False, indent=4))
                             if type(result) is tuple:
                                 response_json = result[1]
                                 raise Exception
@@ -237,17 +238,14 @@ if __name__ == "__main__":
                                 assert len(result) == len(
                                     name_list
                                 ), f"Result length mismatch: {len(result)} {len(name_list)}"
-                                # new_name_list = set(result.keys())
-                                # # Compare the new name list with the old one
-                                # if new_name_list != set(name_list):
-                                #     logger.critical(f"Name list mismatch: {new_name_list} {name_list}")
-                                #     raise Exception
                                 response_json = result
                             buffer[original_msg] = str(response_json)
                             flag = False
                             break
-                        except Exception as e:
-                            print(e)
+                        except Exception:
+                            import sys
+                            exception = sys.exc_info()
+                            logger.opt(exception=exception).error("Logging exception traceback")
                             retry_count -= 1
                             continue
 

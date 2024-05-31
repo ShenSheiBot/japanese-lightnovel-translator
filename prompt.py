@@ -2,6 +2,7 @@ import json
 from utils import load_config, get_appeared_names
 from loguru import logger
 import os
+import re
 
 
 config = load_config()
@@ -101,15 +102,15 @@ def generate_prompt(text, mode="translation"):
             prompt = ppt + '\n' + prompt
 
         elif mode == "sakura":
-            ppt = "术语表：\n"
+            ppt = "翻译时，遵守以下的术语对照表：\n"
             ppt += "\n".join(
                 [
-                    f"{key} = {value['cn_name']}"
+                    f"**{value['cn_name']}**->{value['cn_name']}\n{key}->{value['cn_name']}"
                     for key, value in list(appeared_names.items())[:20]
                     if key in text
                 ]
             )
-            prompt = ppt + '\n' + prompt
+            prompt = ppt + '\n\n\n' + prompt
         else:
             prompt += "在翻译时，尽量不要包含任何英文，遵守如下的日中人名/地名惯例：\n"
             prompt += "\n".join([f"{key} = {value}" for key, value in list(appeared_names.items())[:20] if key in text])
@@ -131,6 +132,30 @@ def generate_prompt(text, mode="translation"):
     text += "\n\n---------------以下是中文翻译---------------\n\n"
 
     return text
+
+
+def sakura_prompt(text, name_convention, mode):
+    appeared_names = get_appeared_names(text, name_convention)
+    prompt = "将下面的日文文本翻译成中文："
+    mapping = ""
+    if "soft" in mode and len(appeared_names) != 0:
+        prompt = "将下面的日文文本根据上述术语表的对应关系和备注翻译成中文："
+        mapping = "根据以下术语表：\n"
+        mapping += "\n".join(
+            [
+                f"{key}->{value['cn_name']}" + (f"\n{value['cn_name']}->{value['cn_name']}" if "cc" in mode else "")
+                for key, value in list(appeared_names.items())[:20]
+                if key in text
+            ]
+        )
+    if "hard" in mode:
+        for key, value in list(appeared_names.items())[:20]:
+            text = text.replace(key, value['cn_name'])
+    if mapping:
+        prompt = mapping + '\n\n' + prompt
+    # Remove extra new lines
+    text = re.sub(r'\n\n+', '\n---\n', text)
+    return prompt + text
 
 
 if __name__ == "__main__":
