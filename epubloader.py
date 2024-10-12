@@ -53,12 +53,10 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
     for name, model in translation_config.items():
         
         if "Sakura" in name:
-            prompt = sakura_prompt(jp_text, name_convention, mode="soft-hard")
-            logger.info(f"\n-------- {ruuid} Prompt --------\n\n" + prompt + "\n------------------------\n\n")
-        else:
-            prompt = generate_prompt(jp_text, mode=mode)
-            logger.info(f"\n-------- {ruuid} Prompt --------\n\n" + prompt + "\n------------------------\n\n")
-        
+            mode = "sakura"
+        prompt = generate_prompt(jp_text, mode=mode)
+        logger.info(f"\n-------- {ruuid} Prompt --------\n\n" + prompt + "\n------------------------\n\n")
+    
         retry_count = model['retry_count']
         
         logger.info("Translating using " + name + " ...")
@@ -123,6 +121,8 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
                         logger.critical(f"-------- {ruuid} API invalid response: ---------\n" + cn_text)
                     else:
                         flag = False
+                # finally:
+                #     pass
                 except APITranslationFailure as e:
                     if "Connection error" in str(e) and retry_count == 1:
                         raise

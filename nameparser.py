@@ -7,7 +7,10 @@ from loguru import logger
 import json
 from p_tqdm import p_map
 from tqdm import tqdm
+from dotenv import load_dotenv
 
+
+load_dotenv()
 
 with open('resource/namedetect_prompt_3.txt', 'r', encoding='utf-8') as f:
     prompt = f.read()

@@ -89,8 +89,8 @@ class GoogleChatApp(APIChatApp):
         last_chat_time = time.time()
             
         self.messages.append({"role": "user", "content": message})
-        prompt = "".join([m["content"] for m in self.messages])
         try:
+            prompt = "".join([m["content"] for m in self.messages])
             response = self.model.generate_content(
                 prompt,
                 safety_settings=[
@@ -104,8 +104,14 @@ class GoogleChatApp(APIChatApp):
             if 'block_reason' in response.prompt_feedback:
                 print(vars(response))
                 raise APITranslationFailure("Content generation blocked due to safety settings.")
-            self.messages = [{"role": "assistant", "content": response.text}]
-            return response.text
+            
+            try:
+                rtn = response.text
+            except Exception:
+                for candidate in response.candidates:
+                    rtn = "\n".join([part.text for part in candidate.content.parts])
+            self.messages = [{"role": "assistant", "content": rtn}]
+            return rtn
         except Exception as e:
             raise APITranslationFailure(f"Google API connection failed: {str(e)}")
 
