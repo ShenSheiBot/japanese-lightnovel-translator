@@ -73,6 +73,7 @@ def add_translated(msg, names_original, names_processed):
 def to_json(s, jp_names):
     s = s.replace(":", "：")
     lines = s.strip().split("\n")
+    lines = [line for line in lines if "：" in line]
     assert ['：' in line for line in lines], f"Invalid response: {lines}"
     j = [line.split("：")[0].strip() for line in lines]
     rtn = {}

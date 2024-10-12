@@ -19,6 +19,7 @@ import time
 import uuid
 import random
 import string
+import urllib.parse
 
 
 warnings.filterwarnings('ignore', category=XMLParsedAsHTMLWarning)
@@ -236,6 +237,8 @@ def main():
 
         for jp_text in jp_titles_parts:
             jp_titles_ = jp_text.strip().split('\n')
+            if len(jp_text.strip()) == 0:
+                continue
             new_jp_titles = []
             # Concatenate title to the previous one if it's a continuation
             for jp_title in jp_titles_:
@@ -293,10 +296,10 @@ def main():
                 if len(cn_titles_) != len(jp_titles_):
                     logger.error("Title translation failed.")
                     cn_titles_ = jp_titles_
-                
+
                 prev_jp_text.append(jp_text)
                 prev_cn_text.append(cn_text)
-                if len(prev_jp_text) > epubloader_config["CONTEXT_LEN"]:
+                if len(prev_jp_text) > epubloader_config["TITLE_CONTEXT_LEN"]:
                     prev_jp_text.pop(0)
                     prev_cn_text.pop(0)
 
@@ -414,8 +417,15 @@ def main():
                                     decomposable = False
                                 elif (not has_kana(jp_text) and not has_chinese(jp_text)):
                                     cn_text = jp_text
-                                elif jp_text in buffer and validate(jp_text, buffer[jp_text], name_convention) and \
-                                all([item not in jp_text for item in change_list]):
+                                elif (
+                                    jp_text in buffer
+                                    and validate(
+                                        jp_text, buffer[jp_text], name_convention
+                                    )
+                                    and all(
+                                        [item not in jp_text for item in change_list]
+                                    )
+                                ):
                                     cn_text = buffer[jp_text]
                                 else:
                                     ### Start translation
@@ -448,7 +458,7 @@ def main():
                                 if len(prev_jp_text) > epubloader_config["CONTEXT_LEN"]:
                                     prev_jp_text.pop(0)
                                     prev_cn_text.pop(0)
-                                
+
                                 jp_text = txt_to_html(jp_text)
                                 cn_text = txt_to_html(cn_text)
 

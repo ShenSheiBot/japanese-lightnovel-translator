@@ -96,12 +96,14 @@ def txt_to_html(text, tag="p"):
 def split_string_by_length(text, max_length=500):
     parts = []
     count = 0
-    while len(text) > max_length:
+    while len(text) > max_length or len(text.split('\n')) > max_length / 25:
         count += 1
         split_index = text.rfind("\n", 0, max_length)
         while split_index == 0:
             text = text[1:]
             split_index = text.rfind("\n", 0, max_length)
+        while len(text[:split_index].split('\n')) > max_length / 25:
+            split_index = text.rfind("\n", 0, split_index)
         if split_index == -1:
             split_index = max_length
         parts.append(text[:split_index].strip())
@@ -1021,8 +1023,8 @@ def extract_ruby_from_epub(epub_path):
                                 if len(rb[0].text) > 1 and len(rt[0].text) > 1:
                                     break
 
-                        rb_text += rb[0].text if rb else ''
-                        rt_text += rt[0].text if rt else ''
+                        rb_text += str(rb[0].text) if rb else ''
+                        rt_text += str(rt[0].text) if rt else ''
                         visited_ruby.add(ruby)
 
                         # Check if the next sibling is also a <ruby> element

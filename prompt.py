@@ -50,7 +50,7 @@ def generate_prompt(text, mode="translation"):
         prompt = "翻译以下日文轻小说章节为中文。我发送日文原文，你除了中文翻译不回答任何内容。"
         "回答形如：\n1 第一章的中文名\n2 第二章的中文名\n\n"
     elif mode == "sakura":
-        prompt = "将下面的日文文本翻译成中文：\n"
+        prompt = "将下面的日文文本根据对应关系和备注翻译成中文：\n"
     else:
         raise ValueError(f"Unknown mode: {mode}")
     appeared_names = get_appeared_names(text, name_convention)
@@ -85,13 +85,6 @@ def generate_prompt(text, mode="translation"):
                                     if tag != "人名" and tag != "術語" and tag != "女性" and tag != "男性"
                                 ])
                             )
-                        # Add three longest aliases
-                        # aliases = sorted(
-                        #     appeared_names[key]["alias"], key=lambda x: len(x), reverse=True
-                        # )[:3]
-                        # aliases = [alias for alias in aliases if alias != key]
-                        # if len(aliases) > 0:
-                        #     ppt += "，别名有" + '、'.join(aliases)
                         ppt += f"，应翻译为【{appeared_names[key]['cn_name']}】。\n"
                     elif "地名" in appeared_names[key]['info']:
                         ppt += f"【{key}】是地名，应翻译为【{appeared_names[key]['cn_name']}】。\n"
@@ -102,10 +95,10 @@ def generate_prompt(text, mode="translation"):
             prompt = ppt + '\n' + prompt
 
         elif mode == "sakura":
-            ppt = "翻译时，遵守以下的术语对照表：\n"
+            ppt = "根据以下术语表（可以为空）：\n"
             ppt += "\n".join(
                 [
-                    f"**{value['cn_name']}**->{value['cn_name']}\n{key}->{value['cn_name']}"
+                    f"{value['cn_name']}->{value['cn_name']}\n{key}->{value['cn_name']}"
                     for key, value in list(appeared_names.items())[:20]
                     if key in text
                 ]
@@ -196,18 +189,4 @@ if __name__ == "__main__":
 何の関りがある、と悩んだが。
 先に、ポリドロ卿が憶測を口にした。""" # noqa
 
-    # print(len(name_convention))
-    # logger.info(generate_prompt(text))
-    # import yaml
-    # with open("translation.yaml", "r") as f:
-    #     translation_config = yaml.load(f, Loader=yaml.FullLoader)
-    # from apichat import PoeAPIChatApp, GoogleChatApp
-    # # chat = PoeAPIChatApp(
-    # #     api_key=translation_config['Poe-claude-api']['key'], 
-    # #     model_name=translation_config['Poe-claude-api']['name']
-    # # )
-    # chat = GoogleChatApp(
-    #     api_key=translation_config['Gemini-Pro-api']['key'], 
-    #     model_name='gemini-pro'
-    # )
-    # logger.info(chat.chat(generate_prompt(text)))
+    logger.info(generate_prompt(text, mode="sakura"))
