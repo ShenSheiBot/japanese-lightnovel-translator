@@ -2,7 +2,7 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 import re
 from tqdm import tqdm
-from utils import split_string_by_length, load_config, concat_kanji_rubi
+from utils import split_string_by_length, load_config, concat_kanji_rubi, get_filtered_tags
 import re
 
 
@@ -32,9 +32,9 @@ def main(book_name, chapterwise=False):
             for rt_tag in soup.find_all("rt"):
                 rt_tag.decompose()
             
-            if soup.body.find(["p", "h1", "h2", "h3"]):
+            if soup.body.find(["p", "h1", "h2", "h3", "h4", "h5", "h6"]):
                 # Extract paragraphs and join them with new lines
-                paragraphs = soup.find_all(["p", "h1", "h2", "h3", "img", "image"])
+                paragraphs = get_filtered_tags(soup)
                 
                 # Get consecutive paragraphs and titles
                 jp_text_collection = []
