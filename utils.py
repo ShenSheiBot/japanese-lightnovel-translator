@@ -59,20 +59,6 @@ def load_config(filepath='.env'):
                 except (ValueError, SyntaxError):
                     pass
                 config[key] = value
-    if "JP_TITLE" in os.environ:
-        config["JP_TITLE"] = os.environ["JP_TITLE"]
-        if config["JP_TITLE"].startswith('"') and config["JP_TITLE"].endswith('"'):
-            config["JP_TITLE"] = config["JP_TITLE"][1:-1]
-        if config["JP_TITLE"].startswith("'") and config["JP_TITLE"].endswith("'"):
-            config["JP_TITLE"] = config["JP_TITLE"][1:-1]
-        logger.info(f"JP_TITLE: {config['JP_TITLE']}")
-    if "CN_TITLE" in os.environ:
-        config["CN_TITLE"] = os.environ["CN_TITLE"]
-        if config["CN_TITLE"].startswith('"') and config["CN_TITLE"].endswith('"'):
-            config["CN_TITLE"] = config["CN_TITLE"][1:-1]
-        if config["CN_TITLE"].startswith("'") and config["CN_TITLE"].endswith("'"):
-            config["CN_TITLE"] = config["CN_TITLE"][1:-1]
-        logger.info(f"CN_TITLE: {config['CN_TITLE']}")
     return config
 
 

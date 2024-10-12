@@ -26,8 +26,6 @@ warnings.filterwarnings('ignore', category=XMLParsedAsHTMLWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
 with open("translation.yaml", "r") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)
-with open("config/epubloader.yaml", "r") as f:
-    epubloader_config = yaml.load(f, Loader=yaml.FullLoader)
 webapp = None
 config = load_config()
 name_convention[config['JP_TITLE']] = {
@@ -229,7 +227,7 @@ def main():
             name = navpoint.find('text').get_text(strip=True)
             output += str(i) + " " + name + "\n"
             jp_titles.append(name)
-        jp_titles_parts = split_string_by_length(output, epubloader_config["TITLE_SPLIT_LEN"])
+        jp_titles_parts = split_string_by_length(output, config["TITLE_SPLIT_LEN"])
 
         # Traverse the aggregated chapter titles
         prev_jp_text = []
@@ -299,7 +297,7 @@ def main():
 
                 prev_jp_text.append(jp_text)
                 prev_cn_text.append(cn_text)
-                if len(prev_jp_text) > epubloader_config["TITLE_CONTEXT_LEN"]:
+                if len(prev_jp_text) > config["TITLE_CONTEXT_LEN"]:
                     prev_jp_text.pop(0)
                     prev_cn_text.pop(0)
 
@@ -394,7 +392,7 @@ def main():
                         # Handle paragraph
                         if name == "p":
                             # Modify chapter_text using change function
-                            jp_text_parts = split_string_by_length(jp_texts)
+                            jp_text_parts = split_string_by_length(jp_texts, config["MAX_LENGTH"])
 
                             decomposable = len(jp_text_parts) > 0
                             for jp_text in jp_text_parts:
@@ -455,7 +453,7 @@ def main():
                                 cn_text = postprocessing(cn_text, verbose=not args.dryrun)
                                 prev_jp_text.append(jp_text)
                                 prev_cn_text.append(cn_text)
-                                if len(prev_jp_text) > epubloader_config["CONTEXT_LEN"]:
+                                if len(prev_jp_text) > config["CONTEXT_LEN"]:
                                     prev_jp_text.pop(0)
                                     prev_cn_text.pop(0)
 

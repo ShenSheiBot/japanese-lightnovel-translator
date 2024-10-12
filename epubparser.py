@@ -54,7 +54,7 @@ def main(book_name, chapterwise=False):
                     # Handle paragraph
                     if name == "p":
                         # Modify chapter_text using change function
-                        jp_text_parts = split_string_by_length(jp_texts)
+                        jp_text_parts = split_string_by_length(jp_texts, config["MAX_LENGTH"])
                         for jp_text in jp_text_parts:
                             
                             # Remove images

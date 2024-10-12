@@ -98,9 +98,16 @@ def generate_prompt(text, mode="translation"):
             ppt = "根据以下术语表（可以为空）：\n"
             ppt += "\n".join(
                 [
-                    f"{key}->{value['cn_name']}"
+                    (
+                        f"{key}->{value['cn_name']}"
+                        + (
+                            " #女性"
+                            if "女性" in value["info"]
+                            else " #男性" if "男性" in value["info"] else ""
+                        )
+                    )
                     for key, value in list(appeared_names.items())[:20]
-                    if key in text
+                    if key in text and key != value["cn_name"]
                 ]
             )
             prompt = ppt + '\n\n\n' + prompt
