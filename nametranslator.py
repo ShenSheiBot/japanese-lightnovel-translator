@@ -48,7 +48,7 @@ def generate_msg(to_query, example_sentences):
         if "example sentence" not in example_sentences[name]:
             json_msg = json_msg.rstrip() + " 例句：" + example_sentences[name] + f",<{name}>\n"
         else:
-            json_msg = json_msg[:-2] + f",<{name}>"
+            json_msg = json_msg[:-2] + f",<{name}>\n"
     return """翻译以下日文文本为中文：\n""" + json_msg
 
 
@@ -81,7 +81,7 @@ def to_json(s, jp_names):
     for jp_name, cn_name in zip(jp_names, j):
         cn_name = cn_name.replace("ちゃん", "酱")
         res = re.sub(r'[\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF]', '之', cn_name)
-        if res.count("之") > 1:
+        if res.count("之") > 2:
             logger.critical(f"Too many Kana: {jp_name} {cn_name}")
             return None
         else:
@@ -165,10 +165,6 @@ if __name__ == "__main__":
             if retranslate:
                 original_msg = msg
                 msg = add_translated(msg, names, names_processed)
-
-                # Dryrun: JSON output name -> original name.
-                # response = '{' + ', '.join([f'"{name}": "翻{name}译"' for name in name_list]) + '}'
-                # response_json = to_json(response)
                 flag = True
                 for jp_name, model in translation_config.items():
                     if 'Gemini' in jp_name:
@@ -226,7 +222,7 @@ if __name__ == "__main__":
                     while flag and retry_count > 0:
                         try:
                             logger.debug("\n" + msg)
-                            response = api_app.chat(msg + "\n请用中文回答。")
+                            response = api_app.chat(msg)
                             logger.info("\n" + response)
                             result = to_json(response, name_list)
                             logger.success("\n" + json.dumps(result, ensure_ascii=False, indent=4))

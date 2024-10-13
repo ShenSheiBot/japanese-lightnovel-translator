@@ -107,7 +107,7 @@ def generate_prompt(text, mode="translation"):
                         )
                     )
                     for key, value in list(appeared_names.items())[:20]
-                    if key in text and key != value["cn_name"]
+                    if key in text and (key != value["cn_name"] or ("男性" in value["info"] or "女性" in value["info"]))
                 ]
             )
             prompt = ppt + '\n\n\n' + prompt

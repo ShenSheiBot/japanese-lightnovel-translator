@@ -2,7 +2,7 @@ import random
 import re
 import os
 import ast
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 from hanziconv import HanziConv
 from loguru import logger
 from copy import deepcopy
@@ -290,6 +290,7 @@ def gemini_fix(text):
 
 def postprocessing(text, verbose=True):
     text = text.replace("·", "・")
+    text = text.replace("ッ", "").replace("っ", "")
     text = text.replace("\\n", "\n")
     original_text = text
     original_lines = original_text.split("\n")
@@ -387,10 +388,25 @@ def get_filtered_tags(soup):
             ]
         )
 
+    def get_text_or_create_span(element):
+        if isinstance(element, NavigableString):
+            new_span = soup.new_tag("span")
+            new_span.string = element.strip()
+            element.replace_with(new_span)
+            return new_span
+        return element
+
     # Find all eligible elements, including divs
     eligible_elements = soup.find_all(
         ["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote"]
     ) + soup.find_all(is_eligible_div)
+    
+    # Process direct text in divs
+    for div in soup.find_all("div"):
+        div.contents[:] = [get_text_or_create_span(child) for child in div.contents]
+
+    # Update eligible elements to include newly created spans
+    eligible_elements += soup.find_all("span")
 
     # Sort elements by their position in the document
     sorted_elements = sorted(eligible_elements, key=lambda x: x.parent.contents.index(x))

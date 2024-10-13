@@ -415,6 +415,7 @@ def main():
                                     decomposable = False
                                 elif (not has_kana(jp_text) and not has_chinese(jp_text)):
                                     cn_text = jp_text
+                                    decomposable = True
                                 elif (
                                     jp_text in buffer
                                     and validate(
@@ -424,8 +425,10 @@ def main():
                                         [item not in jp_text for item in change_list]
                                     )
                                 ):
+                                    decomposable = True
                                     cn_text = buffer[jp_text]
                                 else:
+                                    decomposable = True
                                     ### Start translation
                                     context = []
                                     for pj, pc in zip(prev_jp_text, prev_cn_text):
@@ -523,9 +526,6 @@ def main():
 
                             if decomposable:
                                 for p_tag in ps_ + ps:  # Combining the lists for simplicity
-                                    # imgs = p_tag.find_all("img")
-                                    # if not imgs:  # If there are no <img> tags, decompose the <p> tag
-                                    #     p_tag.decompose()
                                     p_tag.decompose()
                 else:
                     for s in [soup, cn_soup]:
