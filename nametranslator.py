@@ -14,6 +14,39 @@ from apichat import GoogleChatApp, PoeAPIChatApp, OpenAIChatApp
 from loguru import logger
 import re
 from epubparser import main
+import argparse
+from pathlib import Path
+from typing import Dict
+
+
+def load_previous_translations(previous_book_paths: list) -> Dict:
+    """
+    Load translations from multiple previous books.
+    Later books override translations from earlier books if there are conflicts.
+    """
+    previous_translations = {}
+    
+    for book_path in previous_book_paths:
+        names_path = Path(book_path) / 'names.json'
+        if not names_path.exists():
+            logger.warning(f"No names.json found in {book_path}")
+            continue
+            
+        with open(names_path, 'r', encoding='utf-8') as f:
+            book_translations = json.loads(f.read())
+            
+        # Log any overrides for tracking
+        for name, translation in book_translations.items():
+            if name in previous_translations:
+                old_trans = previous_translations[name]['cn_name']
+                new_trans = translation['cn_name']
+                if old_trans != new_trans:
+                    logger.info(f"Overriding translation for {name}: {old_trans} -> {new_trans}")
+                    
+        previous_translations.update(book_translations)
+        logger.info(f"Loaded {len(book_translations)} translations from {book_path}")
+        
+    return previous_translations
 
 
 with open("config/nametranslator.yaml", "r", encoding="utf-8") as f:
@@ -73,13 +106,17 @@ def add_translated(msg, names_original, names_processed):
     for name in names:
         if name in names_original:
             aliases = names_original[name]['alias']
+            related_translations = []
             for alias in aliases:
-                if alias != name and alias in names_processed:
-                    msg = msg.replace(
-                        f"<{name}>",
-                        f"相关翻译：{names_processed[alias]['jp_name']} -> {names_processed[alias]['cn_name']}",
+                if alias in names_processed:
+                    related_translations.append(
+                        f"{names_processed[alias]['jp_name']} -> {names_processed[alias]['cn_name']}"
                     )
-                    break
+            if related_translations:
+                msg = msg.replace(
+                    f"<{name}>",
+                    f"相关翻译：" + "，".join(related_translations)
+                )
             else:
                 msg = msg.replace(f"<{name}>", "")
     return msg
@@ -117,10 +154,24 @@ def to_json(s, jp_names):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--previous-books",
+        nargs="+",
+        help="Paths to previous book output folders containing names.json",
+    )
+    args = parser.parse_args()
+
     with open(os.path.join('output', config['CN_TITLE'], 'names_raw.json'), encoding='utf-8') as f:
         names = json.loads(f.read())
 
     logger.add(f"output/{config['CN_TITLE']}/name_translate.log", colorize=True, level="DEBUG")
+
+    # Load previous translations if provided
+    previous_translations = {}
+    if args.previous_books:
+        previous_translations = load_previous_translations(args.previous_books)
+        logger.info(f"Loaded total of {len(previous_translations)} previous translations")
 
     visited = set()
     queue = []
@@ -177,7 +228,9 @@ if __name__ == "__main__":
                     raise
             else:
                 original_msg = msg
-                msg = add_translated(msg, names, names_processed)
+                relevant_entries = names_processed.copy()
+                relevant_entries.update(previous_translations)
+                msg = add_translated(msg, names, relevant_entries)
                 flag = True
                 for jp_name, model in translation_config.items():
                     if 'Gemini' in jp_name:
