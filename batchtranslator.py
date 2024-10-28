@@ -9,6 +9,7 @@ from epubloader import translate
 from argparse import ArgumentParser
 from typing import List
 from prompt import generate_prompt
+from apichat import APITranslationFailure
 
 
 class KeyboardInterruptError(Exception):
@@ -59,6 +60,9 @@ def translate_wrapper(content: str, context: List[dict] = None) -> str:
         cn_text = translate(content, context=context)
     except UnboundLocalError:
         cn_text = translate(content, context=None)
+    except APITranslationFailure as e:
+        logger.critical(f"API translation failed: {e}")
+        return
     cn_text = gemini_fix(cn_text)
     buffer[content] = cn_text
     return cn_text

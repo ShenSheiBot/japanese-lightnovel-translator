@@ -31,9 +31,6 @@ if os.path.exists(f"output/{config['CN_TITLE']}/names_updated.json"):
         name_convention = names_updated
         logger.info(f"Changed name conventions: {change_list}")
 
-name_convention_short = {k: (v["cn_name"] if type(v) is dict else v) for k, v in name_convention.items()}
-logger.info(f"Loaded name conventions: {name_convention_short}")
-
 soft_name_convention = {
 }
 

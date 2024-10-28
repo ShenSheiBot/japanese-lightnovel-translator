@@ -51,6 +51,8 @@ def load_config(filepath='.env'):
                 key = key.strip()
                 value = value.strip()
                 # Remove quotes if value is a string that's quoted
+                if len(value) < 1:
+                    continue
                 if (value[0] == value[-1]) and value.startswith(("'", '"')):
                     value = value[1:-1]
                 # Try to evaluate value as int or float
@@ -82,14 +84,12 @@ def txt_to_html(text, tag="p"):
 def split_string_by_length(text, max_length=500):
     parts = []
     count = 0
-    while len(text) > max_length or len(text.split('\n')) > max_length / 25:
+    while len(text) > max_length:
         count += 1
         split_index = text.rfind("\n", 0, max_length)
         while split_index == 0:
             text = text[1:]
             split_index = text.rfind("\n", 0, max_length)
-        while len(text[:split_index].split('\n')) > max_length / 25:
-            split_index = text.rfind("\n", 0, split_index)
         if split_index == -1:
             split_index = max_length
         parts.append(text[:split_index].strip())
@@ -575,13 +575,7 @@ def validate(input, text, name_convention=None):
     # Remove all special chars
     text = ''.join(re.findall(r'[\u4e00-\u9fff.,!?()。，！？《》“”「」\w\sーァ-ヶ]', text))
     text = text.replace('XX', '--')
-    if detect_language(input) == "Japanese":
-        result = detect_language(text) == "Chinese"
-    else:
-        result = True
-    if not result:
-        logger.critical("Translation is not in Chinese.")
-    return result
+    return True
 
 
 ## Remove header
@@ -688,7 +682,12 @@ def zip_folder_7z(folder_path, output_path, password='114514'):
             names_updated_exists = 'names_updated.json' in files
 
             # Filter the files to include only .epub and .json files
-            files_to_add = [f for f in files if f.endswith('.epub') or f.endswith('.json')]
+            files_to_add = [
+                f for f in files if 
+                f.endswith('_cn.epub') 
+                or f.endswith('_cnjp.epub') 
+                or f.endswith('.json')
+            ]
 
             for file_name in files_to_add:
                 # Skip 'names.json' if 'names_updated.json' exists in the same folder

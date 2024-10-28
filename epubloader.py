@@ -272,7 +272,7 @@ def main():
                             jp_text,
                             mode="title_translation",
                             dryrun=args.dryrun,
-                            skip_name_valid=True,
+                            skip_name_valid=False,
                             context=context,
                         )
                         title_buffer[jp_text] = cn_text
@@ -325,6 +325,7 @@ def main():
             if isinstance(item, epub.EpubHtml) and not isinstance(item, epub.EpubNav) \
             and "TOC" not in item.id and "toc" not in item.id:
                 logger.info(f"Translating {item.id} ({current_items}/{total_items}) ...")
+                current_items += 1
 
                 content = item.content.decode("utf-8")
                 # Parse HTML and extract text
@@ -387,6 +388,8 @@ def main():
 
                     for jp_texts, name, ps, ps_ in jp_text_collection:
                         locator = ps[0]
+                        if locator.parent is None:
+                            continue
                         locator_ = ps_[0]
 
                         # Handle paragraph

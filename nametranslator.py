@@ -52,6 +52,21 @@ def generate_msg(to_query, example_sentences):
     return """翻译以下日文文本为中文：\n""" + json_msg
 
 
+def process_gender_tags(info, name_info):
+    if "男性" in info and "女性" in info:
+        male_count = name_info["男性"]["count"]
+        female_count = name_info["女性"]["count"]
+        
+        if 0.9 <= male_count / female_count <= 1.1:
+            info.remove("男性")
+            info.remove("女性")
+        elif male_count > female_count:
+            info.remove("女性")
+        else:
+            info.remove("男性")
+    return info
+
+
 def add_translated(msg, names_original, names_processed):
     # Use regex to find all <name>
     names = re.findall(r'<(.*?)>', msg)
@@ -142,7 +157,6 @@ if __name__ == "__main__":
         api_app = None
 
         for msg in msgs:
-            retranslate = True
             name_list = re.findall(r'<(.*?)>', msg)
             to_del = []
             for jp_name in name_list:
@@ -158,20 +172,16 @@ if __name__ == "__main__":
                         response_json = response_json[1]
                     elif response_json is None:
                         raise Exception
-                    retranslate = False
                 except Exception as e:
                     logger.critical(e)
                     raise
-            if retranslate:
+            else:
                 original_msg = msg
                 msg = add_translated(msg, names, names_processed)
                 flag = True
                 for jp_name, model in translation_config.items():
                     if 'Gemini' in jp_name:
                         api_app = GoogleChatApp(api_key=model['key'], model_name=model['name'])
-                        continue
-                    elif 'Poe' in jp_name:
-                        api_app = PoeAPIChatApp(api_key=model['key'], model_name="GPT-4")
                         api_app.messages = [
                             {
                                 "role": "user",
@@ -179,7 +189,19 @@ if __name__ == "__main__":
                             },
                             {
                                 "role": "bot",
-                                "content": prompt_bot
+                                "content": sakura_prompt_bot
+                            }
+                        ]
+                    elif 'Poe' in jp_name:
+                        api_app = PoeAPIChatApp(api_key=model['key'], model_name=model['name'])
+                        api_app.messages = [
+                            {
+                                "role": "user",
+                                "content": prompt_user
+                            },
+                            {
+                                "role": "bot",
+                                "content": sakura_prompt_bot
                             }
                         ]
                     elif 'Sakura' in jp_name:
@@ -251,6 +273,7 @@ if __name__ == "__main__":
                 for tag in info:
                     if contains_russian_characters(tag):
                         info.remove(tag)
+                info = process_gender_tags(info, names[jp_name]["info"])
                 if not has_kana(jp_name) and not has_chinese(jp_name):
                     cn_name = jp_name
                 names_processed[jp_name] = {
@@ -259,10 +282,6 @@ if __name__ == "__main__":
                     "alias": names[jp_name]["alias"],
                     "info": info
                 }
-            # if api_app:
-            #     api_app = PoeAPIChatApp(api_key=translation_config['Poe-claude-api']['key'], model_name='GPT-4')
-            #     response = api_app.chat("请指出以下中日对照术语翻译中有问题的项：\n" + response + "\n请用中文回答，不要描述翻译正确的项。")
-            #     logger.error(response)
 
         items_to_process = list(names_processed.items())
         for jp_name, cn_name in items_to_process:
