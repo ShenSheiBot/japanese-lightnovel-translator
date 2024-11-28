@@ -4,7 +4,7 @@ from copy import deepcopy
 import argparse
 import re
 from tqdm import tqdm
-from apichat import OpenAIChatApp, GoogleChatApp, PoeAPIChatApp, BaichuanChatApp, APITranslationFailure
+from apichat import OpenAIChatApp, GoogleChatApp, PoeAPIChatApp, AnthropicChatApp, APITranslationFailure
 from utils import txt_to_html, split_string_by_length, sep, postprocessing, remove_duplicate, gemini_fix
 from utils import validate, remove_header, load_config, remove_leading_numbers, get_leading_numbers
 from utils import has_chinese, fix_repeated_chars, update_content, has_kana, replace_section_titles
@@ -19,7 +19,7 @@ import time
 import uuid
 import random
 import string
-import urllib.parse
+import os
 
 
 warnings.filterwarnings('ignore', category=XMLParsedAsHTMLWarning)
@@ -67,8 +67,8 @@ def translate(jp_text, mode="translation", dryrun=False, skip_name_valid=False, 
                 api_app = OpenAIChatApp(api_key=model['key'], model_name=model['name'], endpoint=model['endpoint'])
             elif 'Poe' in name:
                 api_app = PoeAPIChatApp(api_key=model['key'], model_name=model['name'])
-            elif 'Baichuan' in name:
-                api_app = BaichuanChatApp(api_key=model['key'], model_name=model['name'])
+            elif 'Claude' in name:
+                api_app = AnthropicChatApp(api_key=model['key'], model_name=model['name'])
             else:
                 raise ValueError("Invalid model name.")
             
@@ -159,49 +159,23 @@ def post_translate(cn_text):
         line_ = re.sub(r'\(.*?\)', '', line_)
         if "■" in line_ or "カクヨム" in line:
             continue
-        if has_kana(line_) and has_chinese(line_):
-            logger.error("Line contains both Japanese and Chinese: " + line)
-            prompt = f"请补完以下翻译，将包含日语的部分翻译为中文。仅回答翻译完的这句话，回答不许包含假名。\n---\n{line}"
-            
-            response = ""
-            count = 0
-            COUNT = 1
-            while count < COUNT and ("翻译" in response or "抱歉" in response or has_kana(response) 
-                                     or not has_chinese(response) or len(response) / len(line) < 0.5 
-                                     or len(response) / len(line) > 1.5):
-                if 'Poe-claude-api' not in translation_config:
-                    logger.critical("Poe API is not available. Returning the original text.")
-                    return cn_text
-                try:
-                    poe_chat = PoeAPIChatApp(api_key=translation_config['Poe-claude-api']['key'],
-                                             model_name=translation_config['Poe-claude-api']['name'])
-                    response = poe_chat.chat(prompt)
-                except APITranslationFailure as e:
-                    logger.critical(f"API translation failed: {e}")
-                    count += 1
-                    continue
-                if not (line.startswith("「") and line.endswith("」")) \
-                and (response.startswith("「") and response.endswith("」")):
-                    response = response[1:-1]
-                if not (line.startswith("「「") and line.endswith("」」")) \
-                and (response.startswith("「「") and response.endswith("」」")):
-                    response = response[1:-1]
-                
-                count += 1
-            if count == COUNT:
-                logger.error("Failed. No update to line: " + line)
-            else:
-                line = postprocessing(response)
-                logger.error("Updated line: " + line)
         lines.append(line)
     return "\n".join(lines)
 
 
 def main():
-    logger.add(f"output/{config['CN_TITLE']}/info.log", colorize=True, level="DEBUG")
     parser = argparse.ArgumentParser()
     parser.add_argument("--dryrun", action="store_true")
+    parser.add_argument("--cn-title", type=str)
+    parser.add_argument("--jp-title", type=str)
+    
     args = parser.parse_args()
+    if args.cn_title:
+        config['CN_TITLE'] = args.cn_title
+    if args.jp_title:
+        config['JP_TITLE'] = args.jp_title
+    
+    logger.add(f"output/{config['CN_TITLE']}/info.log", colorize=True, level="DEBUG")
 
     # Open the EPUB file
     book = epub.read_epub(f"output/{config['CN_TITLE']}/input.epub", {"ignore_ncx": False})
@@ -218,6 +192,11 @@ def main():
 
         ############ Translate the chapter titles ############
         ncx = book.get_item_with_id("ncx")
+        if ncx is None:
+            ncx = book.get_item_with_id("nav")
+        if ncx is None:
+            logger.critical("NCX file not found.")
+            os._exit(1)
         content = ncx.content.decode("utf-8")
         soup = BeautifulSoup(content, "html5lib")
         navpoints = soup.find_all("navpoint")

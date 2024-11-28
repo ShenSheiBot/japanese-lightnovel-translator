@@ -29,6 +29,7 @@ pydantic-settings = "^2.2.1"
 html5lib = "^1.1"
 py7zr = "^0.21.0"
 p-tqdm = "^1.4.0"
+anthropic = "^0.37.1"
 
 [[tool.poetry.source]]
 name = "pytorch-gpu-src"

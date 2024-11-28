@@ -10,7 +10,7 @@ from utils import (
 import yaml
 import os
 import json
-from apichat import GoogleChatApp, PoeAPIChatApp, OpenAIChatApp
+from apichat import GoogleChatApp, PoeAPIChatApp, OpenAIChatApp, AnthropicChatApp
 from loguru import logger
 import re
 from epubparser import main
@@ -53,10 +53,6 @@ with open("config/nametranslator.yaml", "r", encoding="utf-8") as f:
     translation_config = yaml.load(f, Loader=yaml.FullLoader)    
 
 config = load_config()
-with open('resource/exclusions.txt', 'r', encoding='utf-8') as f:
-    exclusions = f.read().splitlines()
-
-# exclusions = []
 rubies = set()
 
 with open("resource/nametranslate_prompt.txt", "r", encoding="utf-8") as f:
@@ -85,21 +81,6 @@ def generate_msg(to_query, example_sentences):
     return """翻译以下日文文本为中文：\n""" + json_msg
 
 
-def process_gender_tags(info, name_info):
-    if "男性" in info and "女性" in info:
-        male_count = name_info["男性"]["count"]
-        female_count = name_info["女性"]["count"]
-        
-        if 0.9 <= male_count / female_count <= 1.1:
-            info.remove("男性")
-            info.remove("女性")
-        elif male_count > female_count:
-            info.remove("女性")
-        else:
-            info.remove("男性")
-    return info
-
-
 def add_translated(msg, names_original, names_processed):
     # Use regex to find all <name>
     names = re.findall(r'<(.*?)>', msg)
@@ -125,10 +106,12 @@ def add_translated(msg, names_original, names_processed):
 def to_json(s, jp_names):
     s = s.replace(":", "：")
     lines = s.strip().split("\n")
-    lines = [line for line in lines if "：" in line]
+    lines = [line for line in lines if "：" in line and len(line.split("：")[1].strip()) > 0]
     assert ['：' in line for line in lines], f"Invalid response: {lines}"
     j = [line.split("：")[0].strip() for line in lines]
     rtn = {}
+    if len(jp_names) == 1:
+        j = [j[0]]
     assert len(j) == len(jp_names), f"Result length mismatch: {len(j)} {len(jp_names)}"
     for jp_name, cn_name in zip(jp_names, j):
         cn_name = cn_name.replace("ちゃん", "酱")
@@ -183,29 +166,47 @@ if __name__ == "__main__":
     example_sentences = find_example_sentences(list(names.keys()), book)
 
     for entry in names:
-        if entry not in visited and entry not in exclusions:
+        if entry not in visited:
             visited.add(entry)
+            
+            # Skip one char names
+            if len(entry) <= 1:
+                continue
+            
+            # Skip names without kana and without gender
+            if not has_kana(entry) and "男性" not in names[entry]["info"] and "女性" not in names[entry]["info"]:
+                continue
+            
             to_query.append(entry)
             queue.append(entry)
 
             while queue:
                 current = queue.pop(0)
                 for neighbor in names[current]['alias']:
-                    if neighbor not in visited and neighbor not in exclusions:
+                    if neighbor not in visited:
                         visited.add(neighbor)
                         to_query.append(neighbor)
                         queue.append(neighbor)
 
-    to_querys = [to_query[i:i + 5] for i in range(0, len(to_query), 5)]
+    to_querys = [to_query[i:i + 1] for i in range(0, len(to_query), 1)]
     for to_query in to_querys:
         msgs.append(generate_msg(to_query, example_sentences))
         total_names += len(to_query)
 
     with SqlWrapper(os.path.join('output', config['CN_TITLE'], 'name_translate.db')) as buffer:
-
         # Remove all counts related information
         names_processed = {}
         api_app = None
+        previous_conservation = [
+            {
+                "role": "user",
+                "content": prompt_user
+            },
+            {
+                "role": "assistant",
+                "content": sakura_prompt_bot
+            }
+        ]
 
         for msg in msgs:
             name_list = re.findall(r'<(.*?)>', msg)
@@ -235,60 +236,34 @@ if __name__ == "__main__":
                 for jp_name, model in translation_config.items():
                     if 'Gemini' in jp_name:
                         api_app = GoogleChatApp(api_key=model['key'], model_name=model['name'])
-                        api_app.messages = [
-                            {
-                                "role": "user",
-                                "content": prompt_user
-                            },
-                            {
-                                "role": "bot",
-                                "content": sakura_prompt_bot
-                            }
-                        ]
+                        api_app.messages = previous_conservation
+                        if previous_conservation[-1]['role'] == 'assistant':
+                            previous_conservation[-1]['role'] = 'bot'
                     elif 'Poe' in jp_name:
                         api_app = PoeAPIChatApp(api_key=model['key'], model_name=model['name'])
-                        api_app.messages = [
-                            {
-                                "role": "user",
-                                "content": prompt_user
-                            },
-                            {
-                                "role": "bot",
-                                "content": sakura_prompt_bot
-                            }
-                        ]
+                        api_app.messages = previous_conservation
+                        if previous_conservation[-1]['role'] == 'assistant':
+                            previous_conservation[-1]['role'] = 'bot'
+                    elif 'Claude' in jp_name:
+                        api_app = AnthropicChatApp(
+                            api_key=model["key"],
+                            model_name=model["name"],
+                        )
+                        api_app.messages = previous_conservation
                     elif 'Sakura' in jp_name:
                         api_app = OpenAIChatApp(
                             api_key=model["key"],
                             model_name=model["name"],
                             endpoint=model["endpoint"],
                         )
-                        api_app.messages = [
-                            {
-                                "role": "user",
-                                "content": prompt_user
-                            },
-                            {
-                                "role": "assistant",
-                                "content": sakura_prompt_bot
-                            }
-                        ]
+                        api_app.messages = previous_conservation
                     elif 'OpenAI' in jp_name:
                         api_app = OpenAIChatApp(
                             api_key=model["key"],
                             model_name=model["name"],
                             endpoint=model["endpoint"],
                         )
-                        api_app.messages = [
-                            {
-                                "role": "user",
-                                "content": prompt_user
-                            },
-                            {
-                                "role": "assistant",
-                                "content": sakura_prompt_bot
-                            }
-                        ]
+                        api_app.messages = previous_conservation
                     else:
                         continue
 
@@ -312,6 +287,24 @@ if __name__ == "__main__":
                                 ), f"Result length mismatch: {len(result)} {len(name_list)}"
                                 response_json = result
                             buffer[original_msg] = str(response_json)
+                            previous_conservation = [
+                                {
+                                    "role": "user",
+                                    "content": prompt_user
+                                },
+                                {
+                                    "role": "assistant",
+                                    "content": sakura_prompt_bot
+                                },
+                                {
+                                    "role": "user",
+                                    "content": msg
+                                },
+                                {
+                                    "role": "assistant",
+                                    "content": response
+                                }
+                            ]
                             flag = False
                             break
                         except Exception:
@@ -326,7 +319,6 @@ if __name__ == "__main__":
                 for tag in info:
                     if contains_russian_characters(tag):
                         info.remove(tag)
-                info = process_gender_tags(info, names[jp_name]["info"])
                 if not has_kana(jp_name) and not has_chinese(jp_name):
                     cn_name = jp_name
                 names_processed[jp_name] = {

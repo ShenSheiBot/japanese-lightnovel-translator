@@ -507,11 +507,14 @@ def validate(input, text, name_convention=None):
     lines = text.split("\n")
 
     # Number of new line ratio
-    text_new_line_count = text.count("\n")
-    input_new_line_count = input.count("\n")
+    text_new_line_count = len([line for line in text.split("\n") if line.strip()])
+    input_new_line_count = len([line for line in input.split("\n") if line.strip()])
     if input_new_line_count > 3:
         if text_new_line_count / input_new_line_count < 0.5:
-            logger.critical("Too few new lines.")
+            logger.critical("Too few new lines. ")
+            logger.debug(f"Input: {input_new_line_count}, Output: {text_new_line_count}")
+            logger.debug(input)
+            logger.debug(text)
             return False
 
     text = postprocessing(text, verbose=False)
@@ -522,22 +525,6 @@ def validate(input, text, name_convention=None):
         logger.critical(text)
         return False
 
-    # text_new_line_count = len([line for line in text.split('\n') if line.strip() != ''])
-    # input_new_line_count = len([line for line in input.split('\n') if line.strip() != ''])
-    # if input_new_line_count == 1:
-    #     if text_new_line_count > 2:
-    #         logger.critical("Too many new lines.")
-    #         return False
-    #     if "翻译" in text and "版权" in text:
-    #         logger.critical("Invalid title translation.")
-    #         return False
-
-    # if contains_russian_characters(text):
-    #     logger.critical("Russian characters detected.")
-    #     return False
-    # if contains_arabic_characters(text):
-    #     logger.critical("Arabic characters detected.")
-    #     return False
     if contains_tibetan_characters(text):
         logger.critical("Tibetan characters detected.")
         return False
@@ -891,16 +878,14 @@ def segment_sentences(text):
     return list(segmenter(text))
 
 
-def find_example_sentences(names, book):
+def find_example_sentences(names, book, count=None):
     # Combine all chapters into a single text
     full_text = ''.join(book)
     # Find all sentences in the text
     sentences = segment_sentences(full_text)
 
     # Dictionary to hold the example sentences for each name
-    example_sentences = {name: "" for name in names}
-    # Dictionary to hold the lengths of the sentences for each name
-    sentence_lengths = {name: float('inf') for name in names}
+    example_sentences = {name: [] for name in names}
     nonoptimal = {}
 
     # Loop through each sentence to find if it contains a name entity
@@ -916,22 +901,28 @@ def find_example_sentences(names, book):
                 highlighted_sentence = re.sub(f"({name})", r"**\1**", sentence)
                 highlighted_length = len(highlighted_sentence)
                 # Check if the highlighted sentence is at least triple as long as the name
-                if highlighted_length >= max(3 * len(name), 20):
-                    # Check if this sentence is shorter than the current shortest acceptable sentence
-                    if highlighted_length < sentence_lengths[name]:
-                        example_sentences[name] = highlighted_sentence
-                        sentence_lengths[name] = highlighted_length
+                if highlighted_length >= max(3 * len(name), 20) and highlighted_length <= 100:
+                    example_sentences[name].append(highlighted_sentence)
                 else:
-                    nonoptimal[name] = highlighted_sentence
+                    if name not in nonoptimal or len(highlighted_sentence) > len(nonoptimal[name]):
+                        nonoptimal[name] = highlighted_sentence
 
-    # Review the collected sentences and decide which one to return for each name
     for name in names:
         # If we didn't find any suitable sentence, return a default message
-        if example_sentences[name] == "":
+        if example_sentences[name] == []:
             if name in nonoptimal:
-                example_sentences[name] = nonoptimal[name]
+                example_sentences[name] = [nonoptimal[name]]
             else:
-                example_sentences[name] = f"No example sentence for **{name}**."
+                example_sentences[name] = [f"No example sentence for **{name}**."]
+            if count is None:
+                example_sentences[name] = example_sentences[name][0]
+        else:
+            # If count is None, return the first sentence
+            if count is None:
+                example_sentences[name] = example_sentences[name][0]
+            # Else, return the first`count` sentences
+            else:
+                example_sentences[name] = example_sentences[name][:count]
 
     return example_sentences
 

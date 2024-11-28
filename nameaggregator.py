@@ -1,9 +1,22 @@
 from utils import load_config, SqlWrapper, toggle_kana, has_kana
 import os
 import json
+from epubparser import main
+from utils import find_example_sentences
+import yaml
+from loguru import logger
+from apichat import GoogleChatApp, PoeAPIChatApp, OpenAIChatApp, AnthropicChatApp, APITranslationFailure
+from p_tqdm import p_map
 
 
 config = load_config()
+
+with open("config/nameaggregator.yaml", "r") as f:
+    translation_config = yaml.load(f, Loader=yaml.FullLoader)
+
+logger.remove()
+logger.add(f"output/{config['CN_TITLE']}/agg.log", colorize=True, level="DEBUG")
+buffer = SqlWrapper(os.path.join('output', config['CN_TITLE'], 'agg.db'))
 
 
 def check_conflicting_tags(tag1, tag2):
@@ -38,9 +51,6 @@ def merge_tags(entry_name, neighbor_name, names):
 
 
 def find_aliases(names, ruby):
-    # Remove standalone names: count < 3
-    names = {name: names[name] for name in names if names[name]['count'] >= 3}
-
     # Reverse the ruby dictionary and turn key into list
     ruby_rev = {}
     for k, v in ruby.items():
@@ -89,6 +99,10 @@ def find_aliases(names, ruby):
             neighbor_name = find_highest_count_neighbor(entry_name, names, visited)
             
             def get_gender(name):
+                if '男性' in names[name]['info'] and '女性' in names[name]['info']:
+                    if names[name]['info']['男性']['count'] > names[name]['info']['女性']['count']:
+                        return '男性'
+                    return '女性'
                 if '男性' in names[name]['info']:
                     return '男性'
                 if '女性' in names[name]['info']:
@@ -116,13 +130,56 @@ def tagmap(tag):
         return "人名"
     else:
         return tag
+    
+    
+def example_sentences_prompt(name, sentences):
+    prompt = f"考虑名字【{name}】，以下是一些关于【{name}】的例句："
+    for sentence in sentences:
+        prompt += f"\n{sentence}"
+    return prompt
+
+
+def classify_no_claude(prompt: str):
+    return classify(prompt, no_claude=True)
+
+
+def classify(prompt: str, no_claude=False):
+    # Already parsed
+    if prompt in buffer:
+        return buffer[prompt]
+        
+    for name, model in translation_config.items():
+        if 'Claude' in name:
+            if no_claude:
+                continue
+            api_app = AnthropicChatApp(api_key=model['key'], model_name=model['name'])
+        elif 'Gemini' in name:
+            api_app = GoogleChatApp(api_key=model['key'], model_name=model['name'])
+        elif 'Poe' in name:
+            api_app = PoeAPIChatApp(api_key=model['key'], model_name=model['name'])
+        elif 'OpenAI' in name:
+            api_app = OpenAIChatApp(api_key=model['key'], model_name=model['name'], endpoint=model['endpoint'])
+        else:
+            continue
+        
+        try:
+            logger.info(prompt)
+            response = api_app.chat(prompt)
+            logger.info(response)
+            buffer[prompt] = response[0]
+            return response[0]
+        except APITranslationFailure or OSError:
+            continue
 
 
 if __name__ == "__main__":
     names = {}
     
-    with open(os.path.join('output', config['CN_TITLE'], 'ruby.json'), encoding='utf-8') as f:
-        ruby = json.loads(f.read())
+    try:
+        with open(os.path.join('output', config['CN_TITLE'], 'ruby.json'), encoding='utf-8') as f:
+            ruby = json.loads(f.read())
+    except Exception:
+        ruby = {}
 
     with SqlWrapper(os.path.join('output', config['CN_TITLE'], 'name.db')) as buffer:
         for _, entry in buffer.items():
@@ -152,6 +209,62 @@ if __name__ == "__main__":
                     'count': names[name]['count'] + 1 if name in names else 1,
                 }
                 names[name] = entry
+        
+        book = main(os.path.join('output', config['CN_TITLE'], 'input.epub'))
+            
+        # Remove standalone names: count < 3
+        names = {name: names[name] for name in names if names[name]['count'] >= 3}
+        example_sentences = find_example_sentences(list(names.keys()), book, count=10)
+        
+        # Remove names with fewer than 3 example_sentences
+        names = {name: names[name] for name in names if name in example_sentences and len(example_sentences[name]) >= 3}
+    
+        # Remove names in exclusions.txt
+        with open('resource/exclusions.txt', 'r', encoding='utf-8') as f:
+            exclusions = f.read().splitlines()
+        names = {name: names[name] for name in names if name not in exclusions}
+        
+        example_prompt = {name: example_sentences_prompt(name, example_sentences[name]) for name in names}
+                
+        # Remove 非专有名词
+        print(len(names))
+        prompts = []
+        for name in example_prompt:
+            prompts.append(example_prompt[name] + f"\n【{name}】是不是小说中的特定的虚构角色/虚构地名/术语（如武器、技能、物质）？"
+                           "如果不是（例如东京、男性、曹操），请回答N。否则请回答Y。除了字母外，不要回答任何其他内容。")
+
+        results = p_map(classify_no_claude, prompts, num_cpus=config['NUM_PROCS'])
+        for name, result in zip(names.copy(), results):
+            if result and result.startswith('N'):
+                del names[name]
+                
+        print("After removing non-proper nouns: ", len(names))
+                
+        example_prompt = {name: example_prompt[name] for name in names}
+        
+        # Find names with conflicting genders
+        unknown_gender_names = []
+        for name in names:
+            if '男性' in names[name]['info'] and '女性' in names[name]['info']:
+                unknown_gender_names.append(name)
+        
+        prompts = []
+        for name in unknown_gender_names:
+            prompts.append(example_prompt[name] + f"\n【{name}】是男性还是女性？如果是男性，请回答M。如果是女性，请回答F。不确定，请回答U。除了字母外，不要回答任何其他内容。")
+        
+        results = p_map(classify, prompts, num_cpus=config['NUM_PROCS'])
+        print(results)
+        for name, result in zip(unknown_gender_names, results):
+            print(name, '->', result)
+            # Delete all gender information
+            if '男性' in names[name]['info']:
+                del names[name]['info']['男性']
+            if '女性' in names[name]['info']:
+                del names[name]['info']['女性']
+            if result and result.startswith('M'):
+                names[name]['info']['男性'] = {"tag": "男性", "count": 10000}
+            elif result and result.startswith('F'):
+                names[name]['info']['女性'] = {"tag": "女性", "count": 10000}
                 
         # If name have both 人名 and 地名, go with the higher count
         for name in names:

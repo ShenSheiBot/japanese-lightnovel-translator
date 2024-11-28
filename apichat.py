@@ -6,9 +6,7 @@ import time
 import asyncio
 import fastapi_poe as fp
 from fastapi_poe import BotError
-import requests
-import re
-import json
+from anthropic import Anthropic
 import random
 
 
@@ -166,42 +164,26 @@ class PoeAPIChatApp:
         return final_message
 
 
-class BaichuanChatApp:
-    def __init__(self, api_key, model_name):
-        self.api_key = api_key
-        self.model_name = model_name
-        self.url = 'https://api.baichuan-ai.com/v1/chat/completions'
-        self.headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.api_key}'
-        }
-    
-    def chat(self, message, temperature=0.3, top_p=0.85, max_tokens=2048):
-        payload = {
-            "model": self.model_name,
-            "messages": [{
-                "role": "user",
-                "content": message
-            }],
-            "temperature": temperature,
-            "top_p": top_p,
-            "max_tokens": max_tokens,
-            "with_search_enhance": False,
-            "stream": True
-        }
+class AnthropicChatApp(APIChatApp):
+    def __init__(self, api_key, model_name, temperature=1.0):
+        super().__init__(api_key, model_name, temperature)
+        self.client = Anthropic(api_key=self.api_key)
+        self.messages = []
 
-        response = requests.post(self.url, headers=self.headers, data=json.dumps(payload))
-        if response.status_code == 200:
-            raw_stream_response = response.text
-            matches = ''.join(re.findall(r'\"content\":\"(.*?)\"', raw_stream_response, re.DOTALL))
-            finish_reason_matches = re.findall(r'\"finish_reason\":\"(.*?)\"', raw_stream_response)
-            if not finish_reason_matches or "stop" not in finish_reason_matches:
-                err_msg = "\n".join(response.text.split('\n')[-5:])
-                raise APITranslationFailure(f"Baichuan API translation terminated: {err_msg}")
-            else:
-                return matches.replace('\\n', '\n')
-        else:
-            raise APITranslationFailure(f"Baichuan API connection failed: {response.text}")
+    def chat(self, message):
+        self.messages.append({"role": "user", "content": message})
+        try:
+            response = self.client.messages.create(
+                model=self.model_name,
+                messages=self.messages,
+                max_tokens=1000,
+                temperature=self.temperature
+            )
+            assistant_message = response.content[0].text
+            self.messages.append({"role": "assistant", "content": assistant_message})
+            return assistant_message
+        except Exception as e:
+            raise APITranslationFailure(f"Anthropic API connection failed: {str(e)}")
 
 
 if __name__ == "__main__":
@@ -209,20 +191,11 @@ if __name__ == "__main__":
     with open("translation.yaml", "r") as f:
         translation_config = yaml.load(f, Loader=yaml.FullLoader)
         
-    google_chat = GoogleChatApp(
-        api_key=translation_config['Gemini-Pro-api']['key'], 
-        model_name='gemini-pro'
-    )
-    poe_chat = PoeAPIChatApp(
-        api_key=translation_config['Poe-claude-api']['key'], 
-        model_name=translation_config['Poe-claude-api']['name']
+    sakura_chat = OpenAIChatApp(
+        api_key=translation_config['Sakura-OpenAI-api']['key'], 
+        endpoint=translation_config['Sakura-OpenAI-api']['endpoint'],
+        model_name='llama3-405b'
     )
 
-    prompt = f"""
-    翻译以下日文轻小说为中文。
-    ---
-    四つん這いの艾莉亚丝の体が小刻みに震え、次の瞬間には股間から透明な飛沫が後ろに向かって飛んだ。
-    """
-    # print(openai_chat.chat(prompt))
-    # print(google_chat.chat(prompt))
-    print(poe_chat.chat(prompt))
+    prompt = f"""ヤリ捨てした女が転生勇者になって復讐しに来やがった"""
+    print(sakura_chat.chat(prompt))

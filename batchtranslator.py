@@ -16,19 +16,6 @@ class KeyboardInterruptError(Exception):
     pass
 
 
-with open('resource/namedetect_prompt_3.txt', 'r', encoding='utf-8') as f:
-    prompt = f.read()
-
-with open("translation.yaml", "r") as f:
-    translation_config = yaml.load(f, Loader=yaml.FullLoader)    
-
-config = load_config()
-logger.remove()
-logger.add(f"output/{config['CN_TITLE']}/info.log", colorize=True, level="DEBUG")
-buffer = SqlWrapper(os.path.join('output', config['CN_TITLE'], 'buffer.db'))
-update_buffer = SqlWrapper(os.path.join('output', config['CN_TITLE'], 'update_buffer.db'))
-
-
 def to_json(s):
     s = s[s.find("["):s.rfind("]") + 1]
     s = s.replace('\'', '"')
@@ -50,7 +37,11 @@ def to_json(s):
     return j
 
 
-def translate_wrapper(content: str, context: List[dict] = None) -> str:
+def translate_wrapper(cn_title: str, content: str, context: List[dict] = None) -> str:
+    logger.remove()
+    logger.add(f"output/{cn_title}/info.log", colorize=True, level="DEBUG")
+    
+    buffer = SqlWrapper(os.path.join('output', cn_title, 'buffer.db'))
     # Already translated
     if (
         content in buffer
@@ -68,11 +59,11 @@ def translate_wrapper(content: str, context: List[dict] = None) -> str:
     return cn_text
 
 
-def chapterwise_translate_wrapper(contents: List[str]):
+def chapterwise_translate_wrapper(cn_title: str, contents: List[str]):
     # Already translated
     context = None
     for content in contents:
-        cn_text = translate_wrapper(content, context=context)
+        cn_text = translate_wrapper(cn_title, content, context=context)
         context = [
             {"role": "user", "content": generate_prompt(content, mode="sakura")},
             {"role": "bot", "content": cn_text},
@@ -81,12 +72,34 @@ def chapterwise_translate_wrapper(contents: List[str]):
 
 if __name__ == "__main__":
     # Option chapterwise
+    with open('resource/namedetect_prompt_3.txt', 'r', encoding='utf-8') as f:
+        prompt = f.read()
+
+    with open("translation.yaml", "r") as f:
+        translation_config = yaml.load(f, Loader=yaml.FullLoader)    
+
+    config = load_config()
+
     parser = ArgumentParser()
     parser.add_argument("--independent", action="store_true")
-    if parser.parse_args().independent:
+    parser.add_argument("--cn-title", type=str)
+    parser.add_argument("--jp-title", type=str)
+    
+    args = parser.parse_args()
+    if args.cn_title:
+        config['CN_TITLE'] = args.cn_title
+    if args.jp_title:
+        config['JP_TITLE'] = args.jp_title
+    
+    buffer = SqlWrapper(os.path.join('output', config['CN_TITLE'], 'buffer.db'))
+    update_buffer = SqlWrapper(os.path.join('output', config['CN_TITLE'], 'update_buffer.db'))
+        
+    if args.independent:
         book_contents = main(os.path.join('output', config['CN_TITLE'], 'input.epub'))
-        p_map(translate_wrapper, book_contents, num_cpus=config['NUM_PROCS'])
+        cn_title = config['CN_TITLE']
+        p_map(lambda x, t=cn_title: translate_wrapper(t, x), book_contents, num_cpus=config['NUM_PROCS'])
     else:
         book_contents = main(os.path.join('output', config['CN_TITLE'], 'input.epub'), chapterwise=True)
         book_contents = list(book_contents.values())
-        p_map(chapterwise_translate_wrapper, book_contents, num_cpus=config['NUM_PROCS'])
+        cn_title = config['CN_TITLE']
+        p_map(lambda x, t=cn_title: chapterwise_translate_wrapper(t, x), book_contents, num_cpus=config['NUM_PROCS'])
