@@ -8,7 +8,7 @@ from apichat import OpenAIChatApp, GoogleChatApp, PoeAPIChatApp, AnthropicChatAp
 from utils import txt_to_html, split_string_by_length, sep, postprocessing, remove_duplicate, gemini_fix
 from utils import validate, remove_header, load_config, remove_leading_numbers, get_leading_numbers
 from utils import has_chinese, fix_repeated_chars, update_content, has_kana, replace_section_titles
-from utils import get_filtered_tags
+from utils import get_filtered_tags, extract_toc_titles, remove_vertical_rl
 from utils import SqlWrapper, zip_folder_7z, convert_san, concat_kanji_rubi, validate_name_convention
 from loguru import logger
 from prompt import generate_prompt, change_list, name_convention, sakura_prompt
@@ -191,21 +191,10 @@ def main():
         title_buffer[config['JP_TITLE']] = config['CN_TITLE']
 
         ############ Translate the chapter titles ############
-        ncx = book.get_item_with_id("ncx")
-        if ncx is None:
-            ncx = book.get_item_with_id("nav")
-        if ncx is None:
-            logger.critical("NCX file not found.")
-            os._exit(1)
-        content = ncx.content.decode("utf-8")
-        soup = BeautifulSoup(content, "html5lib")
-        navpoints = soup.find_all("navpoint")
+        jp_titles = extract_toc_titles(book)
         output = ""
-        jp_titles = []
-        for i, navpoint in enumerate(navpoints):
-            name = navpoint.find('text').get_text(strip=True)
+        for i, name in enumerate(jp_titles):
             output += str(i) + " " + name + "\n"
-            jp_titles.append(name)
         jp_titles_parts = split_string_by_length(output, config["TITLE_SPLIT_LEN"])
 
         # Traverse the aggregated chapter titles
@@ -300,7 +289,13 @@ def main():
 
         ############ Translate the chapters and TOCs ############
         for item in tqdm(book.get_items(), total=total_items, unit="item"):
-
+            # Check if item is CSS
+            if item.media_type == "text/css":
+                css_content = item.content.decode('utf-8')
+                # Remove vertical-rl properties
+                modified_css = remove_vertical_rl(css_content)
+                item.content = modified_css.encode('utf-8')
+            
             if isinstance(item, epub.EpubHtml) and not isinstance(item, epub.EpubNav) \
             and "TOC" not in item.id and "toc" not in item.id:
                 logger.info(f"Translating {item.id} ({current_items}/{total_items}) ...")

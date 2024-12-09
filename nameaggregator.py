@@ -231,7 +231,7 @@ if __name__ == "__main__":
         prompts = []
         for name in example_prompt:
             prompts.append(example_prompt[name] + f"\n【{name}】是不是小说中的特定的虚构角色/虚构地名/术语（如武器、技能、物质）？"
-                           "如果不是（例如东京、男性、曹操），请回答N。否则请回答Y。除了字母外，不要回答任何其他内容。")
+                           "如果不是（例如东京、男性），请回答N。否则请回答Y。除了字母外，不要回答任何其他内容。")
 
         results = p_map(classify_no_claude, prompts, num_cpus=config['NUM_PROCS'])
         for name, result in zip(names.copy(), results):

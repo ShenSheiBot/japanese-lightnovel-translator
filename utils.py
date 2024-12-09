@@ -612,6 +612,63 @@ def detect_language(text):
         return "Chinese"
 
 
+def remove_vertical_rl(css_content):
+    """Remove vertical-rl related properties from CSS while preserving classes"""
+    vertical_rl_pattern = r'^\s*.*vertical-rl.*$'
+
+    lines = css_content.split('\n')
+    filtered_lines = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if re.match(vertical_rl_pattern, line):
+            i += 1
+            continue
+        filtered_lines.append(line)
+        i += 1
+
+    return '\n'.join(filtered_lines)
+
+
+def extract_toc_titles(book):
+    """Extract titles from both NCX and HTML-based TOC files"""
+    titles = []
+    
+    # Try NCX first
+    ncx = book.get_item_with_id("ncx")
+    if ncx:
+        content = ncx.content.decode("utf-8")
+        soup = BeautifulSoup(content, "html5lib")
+        # Get titles from navPoints
+        for text_elem in soup.find_all('text'):
+            if text_elem.get_text(strip=True):
+                titles.append(text_elem.get_text(strip=True))
+    
+    # Look for HTML-based TOC
+    toc_items = [item for item in book.get_items() 
+                 if isinstance(item, epub.EpubHtml) and 
+                 ("TOC" in item.id.upper() or "toc" in item.file_name.lower())]
+    
+    for toc_item in toc_items:
+        content = toc_item.content.decode("utf-8")
+        soup = BeautifulSoup(content, "html5lib")
+        # Get titles from anchor tags
+        for anchor in soup.find_all('a'):
+            if anchor.get_text(strip=True):
+                titles.append(anchor.get_text(strip=True))
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_titles = []
+    for title in titles:
+        if title not in seen:
+            seen.add(title)
+            unique_titles.append(title)
+    
+    return unique_titles
+
+
 def replace_section_titles(nested_list, title_buffer, cnjp=False):
     for element in nested_list:
         if isinstance(element, list) or isinstance(element, tuple):
