@@ -33,9 +33,6 @@ class APIChatApp:
 class OpenAIChatApp(APIChatApp):
     def __init__(self, api_key, model_name, temperature=0.7, endpoint="https://api.openai.com/v1"):
         super().__init__(api_key, model_name, temperature)
-        if "gpt" in model_name:
-            endpoint = "https://api.openai.com/v1"
-        # print(base_url)
         self.client = OpenAI(
             api_key=api_key,
             base_url=endpoint
