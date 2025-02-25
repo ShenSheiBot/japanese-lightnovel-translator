@@ -92,6 +92,8 @@ def split_string_by_length(text, max_length=500):
             split_index = text.rfind("\n", 0, max_length)
         if split_index == -1:
             split_index = max_length
+        if "\n" not in text[:split_index]:
+            split_index = text.find("\n", split_index)
         parts.append(text[:split_index].strip())
         text = text[split_index:]
     if len(text) > 0:
@@ -234,6 +236,10 @@ def replace_repeater_char(text):
 
 def has_kana(text):
     return bool(re.search(r'[\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF]+', text))
+
+
+# def has_kana(text):
+#     return bool(re.search(r'[\u3040-\u309F\u30A0-\u30FA\u30FC-\u30FF\uAC00-\uD7AF\u1100-\u11FF]+', text))
 
 
 def has_chinese(text):
@@ -395,22 +401,24 @@ def get_filtered_tags(soup):
             element.replace_with(new_span)
             return new_span
         return element
-
-    # Find all eligible elements, including divs
-    eligible_elements = soup.find_all(
-        ["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote"]
-    ) + soup.find_all(is_eligible_div)
     
     # Process direct text in divs
     for div in soup.find_all("div"):
         div.contents[:] = [get_text_or_create_span(child) for child in div.contents]
-
-    # Update eligible elements to include newly created spans
-    eligible_elements += soup.find_all("span")
-
-    # Sort elements by their position in the document
-    sorted_elements = sorted(eligible_elements, key=lambda x: x.parent.contents.index(x))
-
+    
+    # Traverse the document in order and collect elements
+    sorted_elements = []
+    
+    # Traverse the document in natural order and collect eligible elements
+    for element in soup.descendants:
+        if hasattr(element, 'name'):  # Skip NavigableString objects
+            if element.name in ["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote"]:
+                sorted_elements.append(element)
+            elif element.name == "div" and is_eligible_div(element):
+                sorted_elements.append(element)
+            elif element.name == "span":
+                sorted_elements.append(element)
+    
     return sorted_elements
 
 

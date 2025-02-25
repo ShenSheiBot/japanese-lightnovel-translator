@@ -19,7 +19,6 @@ import time
 import uuid
 import random
 import string
-import os
 
 
 warnings.filterwarnings('ignore', category=XMLParsedAsHTMLWarning)
@@ -346,6 +345,8 @@ def main():
                     img_sets = []
 
                     for p_tag, p_tag_ in zip(paragraphs, paragraphs_):
+                        if len(p_tag.get_text()) == 0:
+                            continue
                         if p_tag.name in ["img", "image"]:
                             img_sets.append((p_tag, p_tag_))
                         if p_tag.name != "p":
@@ -567,7 +568,10 @@ def main():
 
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cnjp.epub", modified_book)
     epub.write_epub(f"output/{config['CN_TITLE']}/{config['CN_TITLE']}_cn.epub", cn_book)
-    password = ''.join(random.choices(string.digits + string.ascii_letters + ",.-+=", k=6))
+    
+    # Generate a password without uppercase I and lowercase l to avoid confusion
+    chars = string.digits + ''.join(c for c in string.ascii_letters if c not in 'Il') + ",.-+="
+    password = ''.join(random.choices(chars, k=6))
     zip_folder_7z(
         f"output/{config['CN_TITLE']}/", 
         f"output/{config['CN_TITLE']}/{config['CN_TITLE']}【密码：{password}】.7z",
